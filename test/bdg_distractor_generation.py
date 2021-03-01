@@ -34,49 +34,26 @@ Example: `"i go to school by bus", "我 坐 巴 士 上 學"`
 <img src=https://i.ibb.co/QPbjt2X/flow.png width="500">
 """
 
-from google.colab import drive
-
+"""from google.colab import drive
 drive.mount('/drive')
 
 PATH = '/drive/My Drive/Thesis/BDG'
 
-!pip
-install
-inquirer
-!pip
-install
-tensorboardX
-!pip
-install
-nlp2 >= 1.8
-.26
-!pip
-install
-transformers
-!pip
-install
-jsonlines
-!pip
-install
-transformers <= 4.0
-.1, >= 3.3
-.0
-!pip
-install
-torch
-!pip
-install
-sklearn
-# !pip install matplotlib
-!pip
-install
-tqdm >= 4.45
-.0
-# !pip install inquirer
-# !pip install numpy
-# !pip install pytorch-crf
+!pip install inquirer
+!pip install tensorboardX
+!pip install nlp2>=1.8.26
+!pip install transformers
+!pip install jsonlines
+!pip install transformers<=4.0.1,>=3.3.0
+!pip install torch
+!pip install sklearn
+#!pip install matplotlib
+!pip install tqdm>=4.45.0
+#!pip install inquirer
+#!pip install numpy
+#!pip install pytorch-crf
 
-!nvidia - smi
+!nvidia-smi"""
 
 """## Data preprocessing
 
@@ -85,353 +62,27 @@ tqdm >= 4.45
 
 # source https://github.com/Yifan-Gao/Distractor-Generation-RACE
 
-!wget
-https: // raw.githubuserconte12284nt.com / Yifan - Gao / Distractor - Generation - RACE / master / data / data.tar.gz
-!tar
-xvzf
-data.tar.gz
+"""!wget https://raw.githubuserconte12284nt.com/Yifan-Gao/Distractor-Generation-RACE/master/data/data.tar.gz
+!tar xvzf data.tar.gz
 
-!wget
-http: // www.cs.cmu.edu / ~glai1 / data / race / RACE.tar.gz
-!tar
-xvzf
-RACE.tar.gz
+!wget http://www.cs.cmu.edu/~glai1/data/race/RACE.tar.gz
+!tar xvzf RACE.tar.gz
 
 from google.colab import drive
-
 drive.mount('/drive')
 
-!mkdir
-"processed_data"
-!mkdir
-"/drive/My Drive/Thesis/BDG/processed_data"
+!mkdir "processed_data"
+!mkdir "/drive/My Drive/Thesis/BDG/processed_data"""""
 
 import sys
+import os
 
-PATH = '/drive/My Drive/Thesis/BDG'
+PATH = f'/home/vivanov/distractor_generation'
+DATA_PATH = f'{PATH}/data/processed'
 sys.path.append(PATH)
 
-import os
+# !ls '/drive/My Drive/Thesis/BDG'
 
-print(os.listdir('/drive/My Drive/Thesis'))
-print(os.listdir('/drive/My Drive/Thesis/BDG'))
-print(os.listdir('/drive/My Drive/Thesis/BDG/processed_data'))
-
-!ls
-'/drive/My Drive/Thesis/BDG'
-
-"""### Converting data"""
-
-!ls
-distractor
-
-import csv
-from statistics import mean
-from collections import defaultdict
-
-import nlp2
-import jsonlines
-from transformers import *
-from tqdm.notebook import tqdm
-
-tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
-
-input_folder = "./distractor"
-output_folder = PATH + "/processed_data/"
-
-inputFiles = [f for f in nlp2.get_files_from_dir(input_folder) if 'json' in f]
-
-for inputFile in tqdm(inputFiles):
-    if not 'updated' in inputFile:
-        continue
-    questions = defaultdict(dict)
-    outfile_type = inputFile.split("/")[-1].replace(".json", "")
-    print(inputFile, outfile_type)
-    with jsonlines.open(inputFile, mode='r') as reader:
-        count = 0
-        for obj in reader:
-            count += 1
-            article = " ".join(obj['article']).strip()
-            question = " ".join(obj['question']).strip()
-            distractor = " ".join(obj['distractor']).strip()
-            answer_text = " ".join(obj['answer_text']).strip()
-            id = (article + question).replace(" ", '')
-            questions[id]['context'] = article
-            questions[id]['question'] = question
-            questions[id]['answer'] = answer_text
-            if 'distractor' in questions[id]:
-                questions[id]['distractor'].append(distractor)
-            else:
-                questions[id]['distractor'] = [distractor]
-        print(len(questions), count)
-
-        count_over_512 = 0
-        data_list = []
-        data_list_wo_a = []
-        data_sep_list = []
-        data_sep_list_wo_a = []
-        d_count = []
-        for _, item in questions.items():
-            c = item['context']
-            q = item['question']
-            a = item['answer']
-            d = item['distractor']
-            d_count.append(len(d))
-            t_c = tokenizer.tokenize(c)
-            t = tokenizer.tokenize(c + " [SEP] " + q + " [SEP] " + a + " [SEP] " + " [SEP] ".join(d))
-            if len(t) > 512:
-                t_oth = tokenizer.tokenize(" [SEP] " + q + " [SEP] " + a + " [SEP] " + " [SEP] ".join(d))
-                remain = 512 - len(t_oth)
-                t_c = t_c[:remain]
-                if len(t_c + t_oth) > 512:
-                    print(len(t))
-                    count_over_512 += 1
-                    continue
-            t_in = t_c + tokenizer.tokenize(" [SEP] " + q + " [SEP] " + a)
-            t_out = tokenizer.tokenize(" [SEP] ".join(d))
-            for oned in d:
-                data_sep_list.append(
-                    [tokenizer.convert_tokens_to_string(t_in), tokenizer.convert_tokens_to_string([oned]), a])
-                data_sep_list_wo_a.append(
-                    [tokenizer.convert_tokens_to_string(t_in), tokenizer.convert_tokens_to_string([oned])])
-            # cqa_dall_a
-            data_list.append([tokenizer.convert_tokens_to_string(t_in), tokenizer.convert_tokens_to_string(t_out), a])
-            data_list_wo_a.append([tokenizer.convert_tokens_to_string(t_in), tokenizer.convert_tokens_to_string(t_out)])
-
-        print(count_over_512, mean(d_count))
-        # updated: prune the distractors which have no semantic relevance with the article or require some world knowledge to generate.
-        # cqa: c - context, q - question, a - answer
-        # dsep - each distractor is in different sample
-        # dall - distractors are joined by [SEP] in one sample
-        # _a --- each sample endsup with answer separately
-
-        with open(output_folder + outfile_type + "_cqa_dall_a.csv", 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerows(data_list)
-
-        with open(output_folder + outfile_type + "_cqa_dall.csv", 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerows(data_list_wo_a)
-
-        with open(output_folder + outfile_type + "_cqa_dsep_a.csv", 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerows(data_sep_list)
-
-        with open(output_folder + outfile_type + "_cqa_dsep.csv", 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerows(data_sep_list_wo_a)
-
-"""### Dataset statistics"""
-
-import csv
-import nlp2
-from statistics import mean
-from tqdm.notebook import tqdm
-
-inputFiles = [f for f in nlp2.get_files_from_dir(f'{PATH}/processed_data') if 'csv' in f]
-
-for inputFile in tqdm(inputFiles):
-    article_length = []
-    question_length = []
-    answer_length = []
-    distractor_length = []
-    distractor_num = []
-    with open(inputFile, encoding="utf-8", errors='replace') as dataset_file:
-        rows = csv.reader(dataset_file)
-        for r in rows:
-            article, question, answer = r[0].split("[SEP]")
-            distractors = r[1].split("[SEP]")
-
-            article = nlp2.split_sentence_to_array(article, True)
-            question = nlp2.split_sentence_to_array(question, True)
-            answer = nlp2.split_sentence_to_array(answer, True)
-
-            article_length.append(len(article))
-            question_length.append(len(question))
-            answer_length.append(len(answer))
-            distractor_num.append(len(distractors))
-            for dist in distractors:
-                dist = nlp2.split_sentence_to_array(dist, True)
-                distractor_length.append(len(dist))
-
-    print(f"====={inputFile}======")
-    print("number of data", len(question_length), sep='\t')
-    print("average article_length", mean(article_length), sep='\t')
-    print("average question_length", mean(question_length), sep='\t')
-    print("average distractor_length", mean(distractor_length), sep='\t')
-    print("average distractor_num", mean(distractor_num), sep='\t')
-    print("average ans_length", mean(answer_length), sep='\t')
-
-"""### Normalization"""
-
-from collections import defaultdict
-import json
-import itertools as it
-import jsonlines
-import numpy as np
-import os
-
-
-def normalize(target_folder, remove_sim, too_sim_threshold, result_folder):
-    data_dict = defaultdict(lambda: defaultdict(dict))
-    output_dict = defaultdict(list)
-    FILE_TEST = [i for i in os.listdir(target_folder) if ".jsonl" in i]
-    # {'answers': ['a'], 'options': [['a','b']], 'questions': ['q1'], 'article': "", 'id': 'middle2572.txt'}
-    print(FILE_TEST)
-    print("====size====")
-    # count total size of each prediction
-    for FILE in FILE_TEST:
-        with open(os.path.join(target_folder, FILE), 'r', encoding='utf8') as jsonlfile:
-            for jlines in jsonlfile.readlines():
-                jfile = json.loads(jlines)
-                for q in jfile['questions']:
-                    dict_id = jfile['article'].strip() + q.strip()
-                    dict_id = dict_id.replace(" ", "").lower()
-                    data_dict[dict_id][FILE] = jfile
-
-    for _, testfiles in data_dict.items():
-        if len(testfiles) == len(FILE_TEST):
-            for fname, fcontent in testfiles.items():
-                output_dict[fname].append(fcontent)
-    print("Total", len(data_dict), len(output_dict))
-
-    print("====similarity====")
-    from nlgeval import NLGEval
-
-    n = NLGEval(
-        metrics_to_omit=['METEOR', 'EmbeddingAverageCosineSimilairty', 'SkipThoughtCS',
-                         'VectorExtremaCosineSimilarity', 'GreedyMatchingScore', 'CIDEr'])
-    for task, datas in output_dict.items():
-        overall_dict = defaultdict(list)
-        toosim_dict = defaultdict(list)
-        overall_result = dict()
-        toosim_result = dict()
-        for v in datas:
-            if len(v['options'][0]) <= 4:
-                # {'Bleu_1': 0.19999999996000023, 'Bleu_2': 7.071067810274489e-09, 'Bleu_3': 2.5543647739782087e-11, 'Bleu_4': 1.699044244302013e-12, 'METEOR': 0.0547945205479452, 'ROUGE_L': 0.26180257510729615, 'CIDEr': 0.0, 'SkipThoughtCS': 0.41264296, 'EmbeddingAverageCosineSimilairty': 0.804388, 'VectorExtremaCosineSimilarity': 0.650115, 'GreedyMatchingScore': 0.655746}
-                example_dict = defaultdict(list)
-                if "two" in target_folder:  # answer with one option - check answer copying problem
-                    opt = v['options'][0]
-                    # [opt[1]] - ground truth/answer
-                    metrics_dict = n.compute_individual_metrics([opt[1]], opt[0])
-                    for mk, mv in metrics_dict.items():
-                        if np.max(mv) > too_sim_threshold:
-                            toosim_dict[mk].append(1)
-                            if remove_sim:
-                                if v in datas:
-                                    del output_dict[task][datas.index(v)]
-                                break
-                        overall_dict[mk].append(mv)
-                else:
-                    for i in set(it.combinations(v['options'][0], 2)):
-                        if len(i[0]) == 0 or len(i[1]) == 0:
-                            continue
-                        metrics_dict = n.compute_individual_metrics([i[0]], i[1])
-                        for mk, mv in metrics_dict.items():
-                            example_dict[mk].append(mv)
-
-                    for mk, mv in example_dict.items():
-                        if np.max(mv) > too_sim_threshold:
-                            toosim_dict[mk].append(1)
-                            if remove_sim:
-                                if v in datas:
-                                    del output_dict[task][datas.index(v)]
-                                break
-                        overall_dict[mk].append(np.mean(mv))
-
-        for mk, mv in overall_dict.items():
-            overall_result[mk] = np.mean(mv)
-        for mk, mv in toosim_dict.items():
-            toosim_result[mk] = np.sum(mv)
-        print(task, overall_result, "\nToo Sim: ", toosim_result)
-
-    data_dict = defaultdict(lambda: defaultdict(dict))
-    for FILE, datas in output_dict.items():
-        for data in datas:
-            for q in data['questions']:
-                dict_id = data['article'].strip() + q.strip()
-                dict_id = dict_id.replace(" ", "").lower()
-                data_dict[dict_id][FILE] = data
-
-    normalized_dict = defaultdict(list)
-    print("Total", len(data_dict))
-    for _, testfiles in data_dict.items():
-        if len(testfiles) == len(FILE_TEST):
-            for fname, fcontent in testfiles.items():
-                normalized_dict[fname].append(fcontent)
-
-    print("====output====")
-    for f, clist in normalized_dict.items():
-        print("Normalized", f, len(clist))
-        with jsonlines.open(os.path.join(result_folder, f), mode='w') as writer:
-            writer.write_all(clist)
-
-
-print("===== one =====")
-# cal answer similarities
-one_dist = {
-    "target_folder": './one_dist_jsonl',
-    "remove_sim": False,
-    "too_sim_threshold": 0.95,
-    "result_folder": "./one_dist_normalized_filtered_jsonl"
-
-}
-normalize(**one_dist)
-
-print("\n===== multi =====")
-# cal mean similarities in all options
-multi_dist = {
-    "target_folder": './multi_dist_jsonl',
-    "remove_sim": False,
-    "too_sim_threshold": 0.95,
-    "result_folder": "./multi_dist_normalized_jsonl"
-
-}
-normalize(**multi_dist)
-
-"""## Utils"""
-
-from google.colab import drive
-
-drive.mount('/drive')
-
-PATH = '/drive/My Drive/Thesis/BDG'
-
-!pip
-install
-inquirer
-!pip
-install
-tensorboardX
-!pip
-install
-nlp2 >= 1.8
-.26
-!pip
-install
-transformers
-!pip
-install
-jsonlines
-!pip
-install
-transformers <= 4.0
-.1, >= 3.3
-.0
-!pip
-install
-torch
-!pip
-install
-sklearn
-# !pip install matplotlib
-!pip
-install
-tqdm >= 4.45
-.0
-# !pip install inquirer
-# !pip install numpy
-# !pip install pytorch-crf
 
 """### Dataset"""
 
@@ -443,7 +94,7 @@ import nlp2
 import numpy
 import numpy as np
 from torch.utils import data
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from transformers import AutoTokenizer, BertTokenizer
 
 
@@ -470,7 +121,7 @@ def get_dataset(file_path, model_class, parameter, cut=None, lazy=False):
         for missarg in nlp2.function_check_missing_arg(preprocessing_data,
                                                        parameter):  # for all args that are not in paremeter dict
             panel.add_element(k=missarg, v=all_arg[missarg], msg=missarg, default=all_arg[missarg])
-            print('Missarg', missarg, all_arg[misarg])
+            print('Missarg', missarg, all_arg[missarg])
         filled_arg = panel.get_result_dict()
         parameter.update(filled_arg)
 
@@ -501,6 +152,7 @@ class LoadDataset(data.Dataset):
 
         cache_path = fpath + "_" + pretrained_config.replace("/", "_") + ".cache"
         print('using cache', os.path.isfile(cache_path) and cache)
+        print('cache path', cache_path)
 
         if os.path.isfile(cache_path) and cache:
             with open(cache_path, "rb") as cf:
@@ -777,7 +429,7 @@ class NegativeCElLoss(nn.Module):
 from collections import OrderedDict
 
 import nlp2
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 
 def tok_begin(tokenizer):
@@ -1079,7 +731,7 @@ def once_get_feature_from_data(tokenizer, maxlen, input, target=None, ntarget=No
 
 import csv
 from collections import defaultdict
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 
 # import tfkit.utility.tok as tok
@@ -1129,15 +781,6 @@ def preprocessing_data(item, tokenizer, maxlen=512, handle_exceed='start_slice',
     reserved_len:
     kwargs: cli args
     """
-    """print('preprocessing_data')
-    print(f'''
-    item {total_size(item)}
-    maxlen {total_size(maxlen)}
-    handle_exceed {total_size(handle_exceed)}
-    likelihood {total_size(likelihood)}
-    reserved_len {total_size(reserved_len)}
-    kwargs {total_size(kwargs)}
-    ''')"""
 
     likelihood = likelihood[0] if isinstance(likelihood, list) else likelihood
     tasks, task, input, targets = item
@@ -1208,7 +851,7 @@ def preprocessing_data(item, tokenizer, maxlen=512, handle_exceed='start_slice',
 
 
 def get_feature_from_data(tokenizer, maxlen, input, previous, target=None, ntarget=None, reserved_len=0,
-                          handle_exceed_='end_slice', **kwargs):  # TODO was noop
+                          handle_exceed_='start_slice', **kwargs):  # TODO was noop
     feature_dict_list = []
     t_input_list, _ = handle_exceed(tokenizer, input, maxlen - 2 - len(previous) - 1,
                                     handle_exceed_)  # -2 for cls and sep
@@ -1313,6 +956,14 @@ class Model(nn.Module):
             logit_prob = softmax(prediction_scores[0][start], dim=0).data.tolist()
             prob_result = [(self.tokenizer.convert_ids_to_tokens(id), prob) for prob, id in
                            zip(topK.values.data.tolist(), topK.indices.data.tolist())]
+
+            """try this:
+            logit_prob = softmax(prediction_scores[0][start], dim=0)
+            logit_prob = softmax(prediction_scores[0][start], dim=0).data.tolist()	            topK = torch.topk(logit_prob, 50)
+            prob_result = [(self.tokenizer.convert_ids_to_tokens(id), prob) for prob, id in	            prob_result = [(self.tokenizer.convert_ids_to_tokens(id), prob) for prob, id in
+                           zip(topK.values.data.tolist(), topK.indices.data.tolist())]	                           zip(topK.values.data.tolist(), topK.indices.data.tolist())]
+            result_dict['prob_list'].append(logit_prob)	            result_dict['prob_list'].append(logit_prob.data.tolist())
+            """
             result_dict['prob_list'].append(logit_prob)
             result_dict['label_prob_all'].append(prob_result)
             result_dict['label_map'].append(prob_result[0])
@@ -1669,7 +1320,6 @@ class Model_QA_pretrained_triplet(Model):
             # self.qa_model.load_state_dict(torch.load(qa_model_path))
         else:
             # pass
-
             qa_tokenizer = RobertaTokenizer.from_pretrained(
                 "LIAMF-USP/roberta-large-finetuned-race")
             qa_model = RobertaForMultipleChoice.from_pretrained(
@@ -1743,6 +1393,7 @@ class Model_QA_pretrained_triplet(Model):
             cqa = tokenizer.convert_ids_to_tokens(inputs[i])[1:starts[i]]
             cqa = tokenizer.convert_tokens_to_string(cqa)
             # print(cqa.split('[SEP]'), len( cqa.split('[SEP]') ))
+            print(cqa)
             context, question, answer, true_distractor = cqa.split('[SEP]')
 
             out = self.qa(context, question, [answer, true_distractor, gen_distractor], "A")
@@ -1787,6 +1438,13 @@ class Model_QA_pretrained_triplet(Model):
             result_dict['label_prob_all'].append(prob_result)
             result_dict['label_map'].append(prob_result[0])
             outputs = result_dict
+            """Try this
+            start = batch_data['start'][0]
+            logit_prob = softmax(prediction_scores[0][start], dim=0).data.tolist()
+            prob_result = {self.tokenizer.convert_ids_to_tokens(id): prob for id, prob in enumerate(logit_prob)}
+            prob_result = sorted(prob_result.items(), key=lambda x: x[1], reverse=True)
+            result_dict['prob_list'].append(sorted(logit_prob, reverse=True))
+            """
         else:  # if train
             loss_tensors = torch.as_tensor(targets).to(self.device)
             negativeloss_tensors = torch.as_tensor(negative_targets).to(self.device)
@@ -1844,10 +1502,11 @@ import shlex
 import nlp2
 # import tfkit
 import torch
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from transformers import BertTokenizer, AutoTokenizer, AutoModel
 from torch.utils import data
 from itertools import zip_longest
+from datetime import datetime
 import os
 
 # import tfkit.utility.tok as tok
@@ -2009,7 +1668,8 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, logger
     iters = [iter(ds) for ds in train_dataset]
     total_iter_length = len(iters[0])
     end = False
-    pbar = tqdm(total=total_iter_length, desc='train')
+
+    pbar = tqdm(total=total_iter_length, desc='train', leave=True, position=0)
     while not end:
         for i, (model, optim, mtag, batch) in enumerate(zip(models, optims, models_tag, iters)):
             # print(i)
@@ -2030,10 +1690,6 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, logger
                         f"epoch: {epoch}, tag: {mtag}, model: {model.module.__class__.__name__}, step: {total_iter}, loss: {t_loss / total_iter if total_iter > 0 else 0}, total:{total_iter_length}")
             else:
                 end = True
-
-            if input_arg.get('lazy'):
-                del batch
-
         pbar.update(1)
         total_iter += 1
     pbar.close()
@@ -2049,12 +1705,14 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, logger
 arg = shlex.split(
     f"--maxlen 512 " \
     f"--savedir '{PATH}/race_cqa_gen_d/' " \
-    f"--train '{PATH}/processed_data/race_train_updated_cqa_dsep_a.csv' " \
-    f"--test '{PATH}/processed_data/race_test_updated_cqa_dsep_a.csv' " \
+    f"--train '{DATA_PATH}/race_train_updated_cqa_dsep_a.csv' " \
+    f"--test '{DATA_PATH}/race_test_updated_cqa_dsep_a.csv' " \
     f"--model onebyone --likelihood none " \
     f"--tensorboard  --config bert-base-cased --batch 8 --epoch 6 " \
-    f"--cache False --lazy True " \
-    f"--setting standard "
+    f"--cache True " \
+    #f"--lazy False " \
+    f"--setting standard " \
+    f"--worker 8 "
 )
 
 input_arg, model_arg = parse_train_args(sys.argv[1:]) if arg is None else parse_train_args(arg)
@@ -2063,6 +1721,7 @@ logger = Logger(savedir=input_arg.get('savedir'), tensorboard=input_arg.get('ten
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 nlp2.set_seed(input_arg.get('seed'))  # set seeds for random, numpy, torch and torch.cuda, make torch reproducible
 
+logger.write_log(datetime.now().__str__())
 logger.write_log("TRAIN PARAMETER")
 logger.write_log("=======================")
 [logger.write_log(str(key) + " : " + str(value)) for key, value in input_arg.items()]
@@ -2102,7 +1761,7 @@ print('lazy', lazy)
 cut = None  # int(1) # TODO !!! set to None if you have enough memory
 if cut is not None:
     print(f'Attention! `cut` is set to {cut}')
-if 'train' not in input_arg.get('train'):
+if 'train' not in input_arg.get('train')[0]:
     print('Attention! Check the train arg')
 models, train_dataset, test_dataset, train_ds_maxlen, test_ds_maxlen = load_model_and_datas(tokenizer,
                                                                                             pretrained,
@@ -2123,8 +1782,8 @@ for ds in test_dataset:
 train_dataset = [data.DataLoader(dataset=ds,
                                  batch_size=input_arg.get('batch'),
                                  shuffle=True,
-                                 num_workers=input_arg.get('worker')) for ds in
-                 train_dataset]  # create a DataLoader for each Dataset in the list
+                                 num_workers=input_arg.get('worker')) for ds in train_dataset]
+# create a DataLoader for each Dataset in the list
 test_dataset = [data.DataLoader(dataset=ds,
                                 batch_size=input_arg.get('batch'),
                                 shuffle=True,
@@ -2142,7 +1801,7 @@ if input_arg.get('resume'):  # resume training
             tag_ind = package['tags'].index(model_tag)
             models[tag_ind].load_state_dict(state_dict)
     start_epoch = int(package.get('epoch', 1)) + 1
-
+print('start_epoch', start_epoch)
 """### Cycle"""
 
 # train/eval loop
@@ -2167,203 +1826,14 @@ for epoch in tqdm(range(start_epoch, start_epoch + input_arg.get('epoch')), desc
     logger.write_metric("train_loss/epoch", train_avg_loss, epoch)
     logger.write_metric("eval_loss/epoch", eval_avg_loss, epoch)
 
-batch = torch.load('batch.pt')
-
-model = models[0]
-model.__class__.__name__
-
-model.predict()
-
-
-def qa(context, question, options, label_example):
-    choices_inputs = []
-    for ending_idx, (_, ending) in enumerate(
-            zip(context, options)):
-
-        if question.find("_") != -1:  # fill in the blanks questions
-            question_option = question.replace("_", ending)
-        else:
-            question_option = question + " " + ending
-        inputs = qa_tokenizer(
-            context,
-            question_option,
-            add_special_tokens=True,
-            max_length=512,
-            padding="max_length",
-            truncation=True,
-            return_overflowing_tokens=False,
-        )
-        choices_inputs.append(inputs)
-
-    label = torch.LongTensor([label_map[label_example]])
-    input_ids = torch.LongTensor([
-        [x["input_ids"] for x in choices_inputs]
-    ])
-    attention_mask = (
-        torch.Tensor([[x["attention_mask"] for x in choices_inputs]])
-        # as the senteces follow the same structure, just one of them is necessary to check
-        if "attention_mask" in choices_inputs[0]
-        else None
-    )
-
-    example_encoded = {
-        # "example_id": example_id,
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": label,
-    }
-
-    output = qa_model(**example_encoded)
-
-    return output
-
-
-def get_qa_loss(batch):
-    inputs = batch['input']
-    targets = batch['target']
-    negative_targets = batch['ntarget']
-    masks = batch['mask']
-
-    losses = []
-    for i in range(len(inputs)):
-        result, result_dict = self.predict(
-            tokenizer.convert_tokens_to_string(
-                tokenizer.convert_ids_to_tokens(
-                    inputs[i]
-                )
-            )
-        )
-        gen_distractor = result[0]
-
-        # gen_distractor = 'hello'
-
-        # print(tokenizer.convert_ids_to_tokens(inputs[i]))
-        cqa = tokenizer.convert_ids_to_tokens(inputs[i])[1:batch['start'][i]]
-        cqa = tokenizer.convert_tokens_to_string(cqa)
-
-        # print(cqa.split('[SEP]'), len( cqa.split('[SEP]') ))
-        context, question, answer, true_distractor = cqa.split('[SEP]')
-        context, question, answer, true_distractor
-
-        out = qa(context, question, [answer, true_distractor, gen_distractor], "A")
-        losses.append(out.loss)
-        # print("A", out, '\n')
-        # if i == 5:
-        #    break
-
-    return np.array(losses).mean()
-
-
-"""### RAM"""
-
-# Calculate how many bytes is needed for storing one sample
-
-import sys
-
-batch = next(iter(test_dataset[0]))
-print(type(batch), list(batch.keys()))
-print(batch)
-print(total_size(batch) / input_arg.get('batch'))
-
-total = sys.getsizeof(batch)
-for k, v in batch.items():
-    print(
-        f'size {v.element_size()} * cnt {v.nelement()} = {v.element_size() * v.nelement()} / or {sys.getsizeof(v.storage())}')
-    # total += v.element_size() * v.nelement()
-    total += sys.getsizeof(v.storage())
-
-total /= input_arg.get('batch')  # Bytes
-print('embeddings', total)
-total += 2500  # size of objects returned by get_data_from_file()
-total /= 1024  # KB
-
-print('{}:\t {:2} {}-bytes'.format('sample  ', total, 'K'))
-print('{}:\t {:2} {}-bytes'.format('train ds', total * 96501 / 1024, 'M'))
-print('{}:\t {:2} {}-bytes'.format('dev ds  ', total * 12089 / 2014, 'M'))
-print('{}:\t {:2} {}-bytes'.format('test ds ', total * 12284 / 1024, 'M'))
-
-"""
-Adapted from https://code.activestate.com/recipes/577504/
-"""
-from __future__ import print_function
-from sys import getsizeof, stderr
-from itertools import chain
-from collections import deque
-
-try:
-    from reprlib import repr
-except ImportError:
-    pass
-import torch
-
-
-def total_size(o, handlers={}, verbose=False):
-    """ Returns the approximate memory footprint an object and all of its contents.
-
-    Automatically finds the contents of the following builtin containers and
-    their subclasses:  tuple, list, deque, dict, set and frozenset.
-    To search other containers, add handlers to iterate over their contents:
-
-        handlers = {SomeContainerClass: iter,
-                    OtherContainerClass: OtherContainerClass.get_elements}
-
-    """
-    dict_handler = lambda d: chain.from_iterable(d.items())
-    all_handlers = {tuple: iter,
-                    list: iter,
-                    deque: iter,
-                    dict: dict_handler,
-                    set: iter,
-                    frozenset: iter,
-                    }
-    all_handlers.update(handlers)  # user handlers take precedence
-    seen = set()  # track which object id's have already been seen
-    default_size = getsizeof(0)  # estimate sizeof object without __sizeof__
-
-    def sizeof(o):
-        if id(o) in seen:  # do not double count the same object
-            return 0
-        seen.add(id(o))
-        s = getsizeof(o, default_size)
-
-        if verbose:
-            print(s, type(o), repr(o), file=stderr)
-
-        if isinstance(o, torch.Tensor):
-            s += o.element_size() * o.nelement()
-        else:
-            for typ, handler in all_handlers.items():
-                if isinstance(o, typ):
-                    s += sum(map(sizeof, handler(o)))
-                    break
-        return s
-
-    return sizeof(o)
-
-
-##### Example call #####
-for d in [
-    1,
-    [1],
-    [1, 1],
-    {1: 1},
-    {1: 1, 2: 2},
-    torch.Tensor([1, 1]),
-    torch.Tensor([1] * 100)
-]:
-    print(d, total_size(d, verbose=False))
-
 """## Eval"""
 
-!pip
-install
-git + https: // github.com / voidful / nlg - eval.git;
-nlg - eval - -setup. / nlg - eval - data /
+# !pip install git+https://github.com/voidful/nlg-eval.git ; nlg-eval --setup ./nlg-eval-data/
 
 import argparse
 import sys
 
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import csv
 import shlex
 
@@ -2385,16 +1855,21 @@ def parse_eval_args(args):
     return vars(parser.parse_args(args))
 
 
-model_path = f"'{PATH}/race_cqa_gen_d (trained on dev)/6.pt'"
+model_path = f"'{PATH}/race_cqa_gen_d/2.pt'"
+print(model_path)
 arg = shlex.split(
     f"""
     --model {model_path}
-    --valid '{PATH}/processed_data/race_test_updated_cqa_dall.csv'
+    --valid '{DATA_PATH}/race_test_updated_cqa_dall.csv'
     --metric nlg
     --print 
-    --setting QA_pretrained_triplet
+    --setting standard
     """
 )
+
+"""
+"""
+
 eval_arg = parse_eval_args(sys.argv[1:]) if arg is None else parse_eval_args(arg)
 print(eval_arg)
 
@@ -2422,6 +1897,8 @@ for i in tqdm(eval_dataset):
     if 'task' not in predict_parameter:
         predict_parameter.update({'task': task})
     result, result_dict = model.predict(**predict_parameter)
+    print(result, result_dict)
+
     for eval_pos, eval_metric in enumerate(eval_metrics):
         # predicted can be list of string or string
         # target should be list of string
@@ -2491,87 +1968,3 @@ for eval_pos, eval_metric in enumerate(eval_metrics):
     for i in eval_metric.cal_score(eval_arg.get('metric')):
         print("TASK: ", i[0], eval_pos)
         print(i[1])
-
-"""## Temp"""
-
-!pip
-install
-datasets
-!pip
-install
-transformers
-!pip
-install
-pyarrow
-
-"""dataset = datasets.load_dataset(
-    "race",
-    "all",
-    split=["train", "validation", "test"],
-)
-training_examples = dataset[0]
-evaluation_examples = dataset[1]
-test_examples = dataset[2]
-
-for idx in range(10):
-    example = training_examples[idx] 
-"""
-
-import torch
-import datasets
-from transformers import RobertaTokenizer
-from transformers import RobertaForMultipleChoice
-
-tokenizer = RobertaTokenizer.from_pretrained(
-    "LIAMF-USP/roberta-large-finetuned-race")
-model = RobertaForMultipleChoice.from_pretrained(
-    "LIAMF-USP/roberta-large-finetuned-race")
-label_map = {label: i
-             for i, label in enumerate(["A", "B", "C", "D"])}
-
-
-def qa(question, context, options, label_example)
-    # question = example["question"]
-    # context = example["article"]
-    # options = example["options"]
-    # label_example = example["answer"]
-
-    choices_inputs = []
-    for ending_idx, (_, ending) in enumerate(
-            zip(context, options)):
-
-        # print(ending_idx, _, ending)
-        if question.find("_") != -1:  # fill in the banks questions
-            question_option = question.replace("_", ending)
-        else:
-            question_option = question + " " + ending
-        inputs = tokenizer(
-            context,
-            question_option,
-            add_special_tokens=True,
-            max_length=512,
-            padding="max_length",
-            truncation=True,
-            return_overflowing_tokens=False,
-        )
-        choices_inputs.append(inputs)
-
-    label = torch.LongTensor([label_map[label_example]])
-    input_ids = torch.LongTensor([
-        [x["input_ids"] for x in choices_inputs]
-    ])
-    attention_mask = (
-        torch.Tensor([[x["attention_mask"] for x in choices_inputs]])
-        # as the senteces follow the same structure, just one of them is necessary to check
-        if "attention_mask" in choices_inputs[0]
-        else None
-    )
-
-    example_encoded = {
-        # "example_id": example_id,
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": label,
-    }
-    output = model(**example_encoded)
-    print(label_example, output)
