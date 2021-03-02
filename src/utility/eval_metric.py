@@ -55,13 +55,13 @@ class EvalMetric:
             input = self.tokenize_text(input.strip())
         if isinstance(input, list):
             for i, t in enumerate(input):
-                input[i] = self.tokenize_text(t.strip())
+                input[i] = self.tokenize_text(t)
 
         if isinstance(predicted, str):
             predicted = self.tokenize_text(predicted)
         if isinstance(predicted, list):
             for i, t in enumerate(predicted):
-                predicted[i] = self.tokenize_text(t.strip())
+                predicted[i] = self.tokenize_text(t)
 
         if isinstance(target, str):
             targets = []
@@ -71,10 +71,10 @@ class EvalMetric:
                 targets.append(self.tokenize_text(target.strip()))
         if isinstance(target, list):
             for i, t in enumerate(target):
-                target[i] = self.tokenize_text(t.strip())
+                target[i] = self.tokenize_text(t)
             targets = target
 
-        if self.max_candidate - len(targets) > 0 and "nlg" in task:
+        if self.max_candidate - len(targets) > 0:
             targets.extend([""] * (self.max_candidate - len(targets)))
 
         for t in targets:
@@ -98,25 +98,28 @@ class EvalMetric:
                 total = 0
                 f1 = 0
                 for pos, predict in enumerate(task['predicted']):
-                    em_list = []
-                    f1_list = []
+                    em_list = [0]
+                    f1_list = [0]
                     for target in task['targets'][pos]:
-                        if _normalize_answer(str(predict)) == _normalize_answer(str(target)) and len(
-                                _normalize_answer(str(predict))) > 0 or len(str(predict)) == len(str(target)) == 0:
+                        equal = False
+                        if _normalize_answer(predict) == _normalize_answer(target) and len(
+                                _normalize_answer(predict)) > 0:
+                            equal = True
+                        if equal:
                             em_score = 1
                             f1_score = 1
+                            em_list.append(em_score)
+                            f1_list.append(f1_score)
                         else:
                             em_score = 0
-                            f1_score = _f1_score(str(predict), str(target))
-                        em_list.append(em_score)
-                        f1_list.append(f1_score)
+                            f1_score = _f1_score(predict, target)
+                            f1_list.append(f1_score)
+                        data_score.append([predict, target, {'em': em_score, 'f1': f1_score}])
                     em += max(em_list)
                     f1 += max(f1_list)
-                    data_score.append([predict, task['targets'][pos][em_list.index(max(em_list))],
-                                       {'em': max(em_list), 'f1': max(f1_list)}])
                     total += 1
                 result = {"EM": em / (total or not total), "F1": f1 / (total or not total)}
-                data_score = sorted(data_score, key=lambda i: i[2]['em'], reverse=True)
+                data_score = sorted(data_score, key=lambda i: i[2]['em'])
             if "nlg" in metric:
                 try:
                     from nlgeval import NLGEval
@@ -125,6 +128,8 @@ class EvalMetric:
                         "nlg-eval package not install, plz install it: pip install git+https://github.com/voidful/nlg-eval.git ; nlg-eval --setup ./nlg-eval-data/")
                     raise
                 nlgeval = NLGEval(no_skipthoughts=True, no_glove=True, metrics_to_omit=["METEOR"])
+                nlgeval.compute_metrics(ref_list=['abc'],  # transpose
+                                        hyp_list='abc')
                 targets = task['targets']
                 predicted = task['predicted']
                 for t, p in zip(targets, predicted):
@@ -154,7 +159,6 @@ class EvalMetric:
                                      precision_recall_fscore_support(mlb.transform([t]), mlb.transform([p]),
                                                                      average='weighted')))
                     data_score.append([p, t, score])
-                print(mlb.classes_)
                 result = classification_report(
                     mlb.transform(targets),
                     mlb.transform(predicted),

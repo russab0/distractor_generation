@@ -18,6 +18,6 @@ sklearn
 tqdm~=4.56.2
 numpy~=1.20.1
 scipy
-torch
+torch~=1.6.0
 
 setuptools~=47.1.0

@@ -2,27 +2,29 @@ import json
 import sys
 import os
 
+from src.utility import tok_sep
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(os.path.join(dir_path, os.pardir)))
 
 import torch
-from torch import nn
-from src.model.onebyone.dataloader import get_feature_from_data
+import torch.nn as nn
+from gen_onebyone.data_loader import get_feature_from_data
 from itertools import combinations
 from torch.nn.functional import softmax
-from math import log
-import src.utility.tok as tok
-from src.utility.loss import NegativeCElLoss
+from math import log, exp
+from utility.loss import *
+from utility.tok import *
 import numpy as np
 
 
-class Model(nn.Module):
+class OneByOne(nn.Module):
     def __init__(self, tokenizer, pretrained, maxlen=512, **kwargs):
         super().__init__()
         self.tokenizer = tokenizer
         self.pretrained = pretrained
         self.model = nn.Linear(self.pretrained.config.hidden_size, self.tokenizer.__len__())
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'  # TODO try cpu
         self.maxlen = maxlen
         print('Using device:', self.device)
         self.model.to(self.device)
@@ -46,11 +48,10 @@ class Model(nn.Module):
                 'prob_list': []
             }
             start = batch_data['start'][0]
-            logit_prob = softmax(prediction_scores[0][start], dim=0)
-            topK = torch.topk(logit_prob, 50)
-            prob_result = [(self.tokenizer.convert_ids_to_tokens(id), prob) for prob, id in
-                           zip(topK.values.data.tolist(), topK.indices.data.tolist())]
-            result_dict['prob_list'].append(logit_prob.data.tolist())
+            logit_prob = softmax(prediction_scores[0][start], dim=0).data.tolist()
+            prob_result = {self.tokenizer.convert_ids_to_tokens(id): prob for id, prob in enumerate(logit_prob)}
+            prob_result = sorted(prob_result.items(), key=lambda x: x[1], reverse=True)
+            result_dict['prob_list'].append(sorted(logit_prob, reverse=True))
             result_dict['label_prob_all'].append(prob_result)
             result_dict['label_map'].append(prob_result[0])
             outputs = result_dict
@@ -87,7 +88,7 @@ class Model(nn.Module):
                 break
 
     def predict(self, input='', topK=1, topP=0.85, mode=['greedy', 'topK', 'topP'], decodenum=1, filtersim=True,
-                reserved_len=0, task=None, handle_exceed='noop'):
+                reserved_len=0, task=None):
         filtersim = json.loads(str(filtersim).lower())
         topK = int(topK)
         topP = float(topP)
@@ -101,14 +102,12 @@ class Model(nn.Module):
                 all_candidates = list()
                 exceed = False
                 for seq in sequences:
-                    if tok.tok_sep(self.tokenizer) not in seq[0]:
+                    if tok_sep(self.tokenizer) not in seq[0]:
                         tokens, score = seq
-
                         feature_dict = get_feature_from_data(self.tokenizer, self.maxlen, input, tokens,
-                                                             reserved_len=reserved_len,
-                                                             handle_exceed=handle_exceed)[-1]
+                                                             reserved_len=reserved_len)
                         # check input exceed
-                        if len(tokens) >= self.maxlen or feature_dict['start'] >= self.maxlen:
+                        if len(feature_dict['input']) > self.maxlen:
                             exceed = True
                             all_candidates.append(seq)
                             continue
@@ -117,9 +116,10 @@ class Model(nn.Module):
                             feature_dict[k] = [v]
                         predictions = self.forward(feature_dict, eval=True)
                         token_prob_list = predictions['label_prob_all'][0]
+
                         # topK topP
                         if 'top' in mode:
-                            prob_list = [prob for _, prob in token_prob_list]
+                            prob_list = [prob for tok, prob in token_prob_list]
                             if 'topk' in mode:
                                 sample_list = prob_list[:topK]
                                 decode_range = max(decodenum, topK)
@@ -158,16 +158,18 @@ class Model(nn.Module):
                 stop = 0
                 for i in sequences:
                     # i[0] - sequence,i[1] - sequence score
-                    if tok.tok_sep(self.tokenizer) in i[0] or i[1] >= self.maxlen:
+                    if tok_sep(self.tokenizer) in i[0] \
+                            or len(i[0]) > 3 and i[0][-1] == i[0][-2] == i[0][-3] \
+                            or i[1] > 300:
                         stop += 1
                 if stop == len(sequences) or exceed:
                     break
 
             for i in range(len(sequences)):
-                if tok.tok_sep(self.tokenizer) in sequences[i][0]:  # remove sep token
-                    sequences[i][0] = sequences[i][0][:sequences[i][0].index(tok.tok_sep(self.tokenizer))]
+                if tok_sep(self.tokenizer) in sequences[i][0]:  # remove sep token
+                    sequences[i][0] = sequences[i][0][:sequences[i][0].index(tok_sep(self.tokenizer))]
                 sequences[i][0] = "".join(self.tokenizer.convert_tokens_to_string(sequences[i][0]))
             result_dict = {
                 'label_map': sequences
             }
-            return [i[0] for i in sequences], [result_dict]
+            return [i[0] for i in sequences], result_dict

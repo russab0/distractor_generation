@@ -1,7 +1,10 @@
+import math
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import numpy as np
 
 
 class BCEFocalLoss(nn.Module):
@@ -16,38 +19,35 @@ class BCEFocalLoss(nn.Module):
         return focal_loss.mean()
 
 
+class BCEGWLoss(nn.Module):
+    def __init__(self):
+        super(BCEGWLoss, self).__init__()
+
+    def gaussian(self, x, mean=0.5, variance=0.25):
+        for i, v in enumerate(x.data):
+            x.data[i] = math.exp(-(v - mean) ** 2 / (2.0 * variance ** 2))
+        return x
+
+    def forward(self, input, target):
+        BCE_loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+        BCE_loss = BCE_loss.view(-1)
+        pt = F.sigmoid(BCE_loss)  # prevents nans when probability 0
+        loss = (self.gaussian(pt, variance=0.1 * math.exp(1), mean=0.5) - 0.1 * pt) * BCE_loss
+        return loss.mean()
+
+
 class FocalLoss(nn.Module):
-    def __init__(self, gamma=2, ignore_index=-1):
+    def __init__(self, gamma=2):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.softmax = nn.Softmax(dim=1)
-        self.nll = nn.NLLLoss(ignore_index=ignore_index)
+        self.nll = nn.NLLLoss(ignore_index=-1)
 
     def forward(self, input, target):
         softmax = self.softmax(input)
         logpt = torch.log(softmax)
         pt = Variable(logpt.data.exp())
         return self.nll((1 - pt) ** self.gamma * logpt, target)
-
-
-class SeqCTCLoss(nn.Module):
-    def __init__(self, blank_index):
-        super(SeqCTCLoss, self).__init__()
-        self.blank_index = blank_index
-
-    def forward(self, logits, input_lengths, targets, target_lengths):
-        # lengths : (batch_size, )
-        # log_logits : (T, batch_size, n_class), this kind of shape is required for ctc_loss
-        # log_logits = logits + (logit_mask.unsqueeze(-1) + 1e-45).log()
-        log_logits = logits.log_softmax(-1).transpose(0, 1)
-        loss = F.ctc_loss(log_logits,
-                          targets,
-                          input_lengths,
-                          target_lengths,
-                          blank=self.blank_index,
-                          reduction='mean',
-                          zero_infinity=True)
-        return loss
 
 
 class DiceLoss(nn.Module):
@@ -72,7 +72,7 @@ class DiceLoss(nn.Module):
         if self.reduction == 'mean':
             return dsc_i.mean()
         else:
-            return dsc_i.view(-1)
+            return dsc_i
 
 
 class NegativeCElLoss(nn.Module):
