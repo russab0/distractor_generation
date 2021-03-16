@@ -99,7 +99,7 @@ def get_feature_from_data(tokenizer, maxlen, input, target=None, ntarget=None):
     type_id.extend([1] * (maxlen - len(type_id)))
 
     row_dict['input'] = tokenized_input_id
-    row_dict['type'] = type_id  # TODO try to remove
+    # row_dict['type'] = type_id  # TODO try to remove
     row_dict['mask'] = mask_id
     row_dict['start'] = target_start
 

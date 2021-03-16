@@ -734,8 +734,8 @@ from collections import defaultdict
 from tqdm import tqdm
 
 
-# import tfkit.utility.tok as tok
-# import tfkit.model.once as once
+# import src.utility.tok as tok
+# import src.model.once as once
 
 
 def get_data_from_row(i):
@@ -916,9 +916,9 @@ from math import log
 import numpy as np
 
 
-# from tfkit.model.onebyone.dataloader import get_feature_from_data
-# import tfkit.utility.tok as tok
-# from tfkit.utility.loss import NegativeCElLoss
+# from src.model.onebyone.dataloader import get_feature_from_data
+# import src.utility.tok as tok
+# from src.utility.loss import NegativeCElLoss
 
 
 class Model(nn.Module):
@@ -1500,7 +1500,7 @@ import sys
 import shlex
 
 import nlp2
-# import tfkit
+# import src
 import torch
 from tqdm import tqdm
 from transformers import BertTokenizer, AutoTokenizer, AutoModel
@@ -1509,10 +1509,10 @@ from itertools import zip_longest
 from datetime import datetime
 import os
 
-# import tfkit.utility.tok as tok
-# from tfkit.utility.dataset import get_dataset
-# from tfkit.utility.logger import Logger
-# from tfkit.utility.model_loader import load_model_class
+# import src.utility.tok as tok
+# from src.utility.dataset import get_dataset
+# from src.utility.logger import Logger
+# from src.utility.model_loader import load_model_class
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -1838,8 +1838,8 @@ import csv
 import shlex
 
 
-# from tfkit.utility.eval_metric import EvalMetric
-# from tfkit.utility.model_loader import load_trained_model, load_predict_parameter
+# from src.utility.eval_metric import EvalMetric
+# from src.utility.model_loader import load_trained_model, load_predict_parameter
 
 
 def parse_eval_args(args):

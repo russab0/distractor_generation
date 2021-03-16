@@ -1,4 +1,5 @@
 import json
+import time
 import sys
 import os
 
@@ -16,6 +17,7 @@ from math import log, exp
 from utility.loss import *
 from utility.tok import *
 import numpy as np
+from src.memory import get_gpu_usage, get_cpu_usage, get_ram_usage
 
 
 class OneByOne(nn.Module):
@@ -24,16 +26,31 @@ class OneByOne(nn.Module):
         self.tokenizer = tokenizer
         self.pretrained = pretrained
         self.model = nn.Linear(self.pretrained.config.hidden_size, self.tokenizer.__len__())
+        # self.device = 'cpu'
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'  # TODO try cpu
         self.maxlen = maxlen
-        print('Using device:', self.device)
-        self.model.to(self.device)
+        get_gpu_usage('created linear')
+        get_cpu_usage('created linear')
+        get_ram_usage('created linear')
+        time.sleep(5)
+        self.model.to(self.device)  # TODO return
+        print('linear Using device:', self.device)
+        print('Transfred model to device')
 
     def forward(self, batch_data, eval=False):
         inputs = batch_data['input']
         targets = batch_data['target']
         negative_targets = batch_data['ntarget']
         masks = batch_data['mask']
+
+        dim = 0
+        inputs = torch.stack(inputs, dim=dim)
+        targets = torch.stack(targets, dim=dim)
+        negative_targets = torch.stack(negative_targets, dim=dim)
+        masks = torch.stack(masks, dim=dim)
+
+        #print(batch_data)
+        #print(inputs)
 
         tokens_tensor = torch.as_tensor(inputs).to(self.device)
         mask_tensors = torch.as_tensor(masks).to(self.device)
@@ -66,6 +83,9 @@ class OneByOne(nn.Module):
                                               negativeloss_tensors.view(-1))
             masked_lm_loss += negative_loss
             outputs = masked_lm_loss
+
+        del inputs, targets, negative_targets, masks, tokens_tensor, mask_tensors, prediction_scores
+
         return outputs
 
     def _jaccard_similarity(self, list1, list2):
