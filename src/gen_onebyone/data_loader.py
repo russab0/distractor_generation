@@ -1,153 +1,17 @@
 import csv
 import os
 import pickle
-import torch
 from collections import defaultdict
 from random import choice
 
 import numpy as np
 from torch.utils import data
 from transformers import AutoTokenizer, BertTokenizer
-from datasets import load_dataset
-
 from tqdm import tqdm
 from utility.tok import *
 import gen_once
-import pandas as pd
-import jsonlines
 
 
-class loadOneByOneDataset(data.IterableDataset):
-
-    def process(self):
-        sample = []
-        total_data = 0
-        data_invalid = 0
-        for i in get_data_from_file(self.fpath):
-            tasks, task, input, target, negative_text = i
-            input = input.strip()
-            tokenized_target = self.tokenizer.tokenize(" ".join(target))
-            # each word in sentence
-            for j in range(1, len(tokenized_target) + 1):
-                feature = get_feature_from_data(self.tokenizer, self.maxlen, input, tokenized_target[:j - 1],
-                                                tokenized_target[:j])
-                if "neg" in self.likelihood or 'both' in self.likelihood:
-                    # formatting neg data in csv
-                    if negative_text is None:
-                        ntext_arr = [self.tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
-                    elif "[SEP]" in negative_text:
-                        ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
-                    else:
-                        ntext_arr = [negative_text.strip()]
-                    # adding neg data
-                    for neg_text in ntext_arr:
-                        feature_neg = gen_once.data_loader.get_feature_from_data(self.tokenizer, self.maxlen, input,
-                                                                                 ntarget=neg_text)
-                        feature['ntarget'] = feature_neg['ntarget']
-                        if self.check_feature_valid(feature):
-                            yield feature
-                        else:
-                            data_invalid += 1
-                        total_data += 1
-                else:
-                    if self.check_feature_valid(feature):
-                        yield feature
-                    else:
-                        data_invalid += 1
-                    total_data += 1
-
-            # end of the last word
-            feature = get_feature_from_data(self.tokenizer, self.maxlen, input, tokenized_target,
-                                            [tok_sep(self.tokenizer)])
-            if "neg" in self.likelihood or 'both' in self.likelihood:
-                # formatting neg data in csv
-                if negative_text is None:
-                    ntext_arr = [self.tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
-                elif "[SEP]" in negative_text:
-                    ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
-                else:
-                    ntext_arr = [negative_text.strip()]
-                # adding neg data
-                for neg_text in ntext_arr:
-                    feature_neg = gen_once.data_loader.get_feature_from_data(self.tokenizer, self.maxlen, input,
-                                                                             ntarget=neg_text)
-                    feature['ntarget'] = feature_neg['ntarget']
-                    if self.check_feature_valid(feature):
-                        yield feature
-                    else:
-                        data_invalid += 1
-                    total_data += 1
-            else:
-                if self.check_feature_valid(feature):
-                    yield feature
-                else:
-                    data_invalid += 1
-                total_data += 1
-
-            # whole sentence masking
-            if 'pos' in self.likelihood or 'both' in self.likelihood:
-                feature = gen_once.data_loader.get_feature_from_data(self.tokenizer, self.maxlen, input,
-                                                                     " ".join(target))
-                if self.check_feature_valid(feature):
-                    for _ in range(int(self.pos_ratio)):
-                        yield feature
-                else:
-                    data_invalid += 1
-                total_data += 1
-
-        print("Processed " + str(total_data) + " data, removed " + str(
-            data_invalid) + " data that exceed the maximum length.")
-
-        if self.cache:
-            with jsonlines.open(self.cache_path, mode='w') as writer:
-                writer.write_all(sample)
-            print('Saved to cache')
-
-    def __init__(self, fpath, pretrained_config, maxlen=510, cache=False, likelihood='',
-                 pos_ratio=1, neg_ratio=1, **kwargs):
-        self.maxlen = maxlen
-        self.fpath = fpath
-        self.likelihood = likelihood
-        self.cache = cache
-        self.pos_ratio = pos_ratio
-
-        sample = []
-        if 'albert_chinese' in pretrained_config:
-            self.tokenizer = BertTokenizer.from_pretrained(pretrained_config)
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(pretrained_config)
-
-        neg_info = "_" + likelihood + "_pos_" + str(pos_ratio) + "_neg_" + str(pos_ratio)
-        cache_path = fpath + "_maxlen" + str(maxlen) + "_" + pretrained_config.replace("/", "_") + neg_info + ".cache"
-        cache_path += 'JSONL'
-
-        self.cache_path = cache_path
-
-    def __iter__(self):
-        print(self.cache, self.cache_path)
-        if os.path.isfile(self.cache_path) and self.cache:
-            reader = jsonlines.open(self.cache_path, mode='r')
-            it = iter(reader)
-            print('loaded', next(it))
-            return it
-        else:
-            generator = iter(self.process())
-            return generator
-
-
-    def increase_with_sampling(self, total):
-        inc_samp = [choice(self.sample) for _ in range(total - len(self.sample))]
-        self.sample.extend(inc_samp)
-
-    def check_feature_valid(self, feature):
-        if len(feature['input']) == len(feature['target']) == len(feature['ntarget']) == self.maxlen:
-            if feature['target'][feature['start']] == feature['ntarget'][feature['start']]:
-                feature['ntarget'][feature['start']] = -1
-            return True
-        else:
-            return False
-
-"""
 class loadOneByOneDataset(data.Dataset):
 
     def __init__(self, fpath, pretrained_config, maxlen=510, cache=False, likelihood='', pos_ratio=1, neg_ratio=1,
@@ -161,23 +25,9 @@ class loadOneByOneDataset(data.Dataset):
 
         neg_info = "_" + likelihood + "_pos_" + str(pos_ratio) + "_neg_" + str(pos_ratio)
         cache_path = fpath + "_maxlen" + str(maxlen) + "_" + pretrained_config.replace("/", "_") + neg_info + ".cache"
-        cache_path += 'JSONL'
-        import psutil
-
-        # Getting % usage of virtual_memory ( 3rd field)
-        print('RAM memory % used:', psutil.virtual_memory()[2]) # TODO remove
-        print(psutil.virtual_memory())
-        print(cache, cache_path)
         if os.path.isfile(cache_path) and cache:
-            with jsonlines.open(cache_path, 'r') as reader:
-                sample = [x for x in reader]
-            #with open(cache_path, "rb") as icf:
-                # sample = pickle.load(icf)
-                # sample = torch.load(icf, map_location='cuda:0')
-                # sample = torch.load(icf)
-                #sample =
-            print('Loaded from cache')
-            print('RAM memory % used:', psutil.virtual_memory()[2])  # TODO remove
+            with open(cache_path, "rb") as cf:
+                sample = pickle.load(cf)
         else:
             total_data = 0
             data_invalid = 0
@@ -279,12 +129,8 @@ class loadOneByOneDataset(data.Dataset):
                 data_invalid) + " data that exceed the maximum length.")
 
             if cache:
-                with open(cache_path, 'wb') as ocf:
-                    print('saving in cache')
-                    torch.save(sample, ocf)
-                    #pickle.dump(sample, ocf)
-                print('Saved to cache')
-        print('Loaded Dataset\n')
+                with open(cache_path, 'wb') as cf:
+                    pickle.dump(sample, cf)
         self.sample = sample
 
     def increase_with_sampling(self, total):
@@ -305,7 +151,7 @@ class loadOneByOneDataset(data.Dataset):
     def __getitem__(self, idx):
         self.sample[idx].update((k, np.asarray(v)) for k, v in self.sample[idx].items())
         return self.sample[idx]
-"""
+
 
 def get_data_from_file(fpath):
     tasks = defaultdict(list)
@@ -356,22 +202,8 @@ def get_feature_from_data(tokenizer, maxlen, input, tokenized_previous, tokenize
     type_id = [0] * len(tokenized_input)
     type_id.extend([1] * (maxlen - len(type_id)))
     row_dict['input'] = tokenized_input_id
-    # row_dict['type'] = type_id  # TODO try to remove
+    row_dict['type'] = type_id
     row_dict['mask'] = mask_id
     row_dict['start'] = target_start
-
-    # if True:
-    #     print("*** Example ***")
-    #     print(f"input: {len(row_dict['input'])}, {tokenizer.decode(row_dict['input'][:target_start])} ")
-    #     print(f"type: {len(row_dict['type'])}, {row_dict['type'][:target_start]} ")
-    #     print(f"mask: {len(row_dict['mask'])}, {row_dict['mask'][:target_start]} ")
-    #     if tokenized_target is not None:
-    #         print(
-    #             f"target: {len(row_dict['target'])}, {tokenizer.convert_ids_to_tokens(row_dict['target'][target_start])} ")
-    #     if ntarget is not None:
-    #         print("POS", target_start, len(tokenized_ntarget))
-    #         print("STR", tokenized_ntarget)
-    #         print("ANS", tokenized_ntarget_id)
-    #         print(f"ntarget: {len(tokenized_ntarget_id)}, {row_dict['ntarget']} ")
 
     return row_dict

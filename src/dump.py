@@ -2,9 +2,6 @@ import argparse
 import torch
 import gen_once
 import gen_onebyone
-import qa
-import classifier
-import tag
 
 
 def main():
@@ -38,6 +35,7 @@ def main():
     elif 'qa' in model_type:
         model = qa.QA(model_config=config, maxlen=maxlen)
 
+    print('Model device:', device)
     model = model.to(device)
     model.load_state_dict(package['model_state_dict'], strict=False)
     model.pretrained.save_pretrained(arg.dumpdir)

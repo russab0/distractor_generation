@@ -87,3 +87,9 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Project
+runs/
+data/
+nlg-eval-data/
+race_cqa_gen_d/

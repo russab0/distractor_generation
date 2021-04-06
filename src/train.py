@@ -1,14 +1,4 @@
 import argparse
-import sys
-import os
-import time
-import datetime
-
-dir_path = os.path.dirname(os.path.realpath(__file__))
-print('dir', dir_path)
-sys.path.append(os.path.abspath(os.path.join(dir_path, os.pardir)))
-
-import argparse
 import random
 from collections import Iterable, defaultdict
 
@@ -29,7 +19,6 @@ import gen_onebyone
 
 from src.utility import get_freqK_unk_token
 from src.utility import BalancedDataParallel
-from src.memory import get_gpu_usage, get_cpu_usage, get_ram_usage
 
 input_arg = {}
 
@@ -48,45 +37,23 @@ def optimizer(model, lr):
 def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer):
     optims = []
     models = []
-    print('started_model_train')
     for i, m in enumerate(models_list):
-        print(type(train_dataset[0].dataset), isinstance(train_dataset[0].dataset, data.IterableDataset))
-        if isinstance(train_dataset[0].dataset, data.IterableDataset):
-            model = m
-        else:
-            model = BalancedDataParallel(input_arg.batch, m)  # TODO return
-        # model = torch.nn.DataParallel(m)
+        model = BalancedDataParallel(input_arg.batch, m)
         model.train()
         models.append(model)
         optims.append(optimizer(m, input_arg.lr[i] if i < len(input_arg.lr) else input_arg.lr[0]))
-    print('balanced data')
+
     total_iter = 0
     t_loss = 0
 
-    for x in train_dataset[0]:
-        print('BEFORE', x)
-        break
-    #iters = [iter(ds) for ds in train_dataset] TODO back
-    iters = [(ds) for ds in train_dataset]
-    for x in iters[0]:
-        print('AFTER', x)
-        break
-
-    try:
-        total_iter_length = len(iters[0])
-    except Exception:
-        total_iter_length = None
+    iters = [iter(ds) for ds in train_dataset]
+    total_iter_length = len(iters[0])
     end = False
-    pbar = tqdm(total=total_iter_length, desc='train', leave=True, position=0)
+    pbar = tqdm(total=total_iter_length)
     while not end:
-        model, optim, models_tag, iters = models[0], optims[0], models_tag[0], iters[0]
-        for train_batch in iters:
-        #for (model, optim, mtag, batch) in zip(models, optims, models_tag, iters):
-        #    train_batch = next(batch, None)
-            #print('train_batch', train_batch)
+        for (model, optim, mtag, batch) in zip(models, optims, models_tag, iters):
+            train_batch = next(batch, None)
             if train_batch is not None:
-                # print(train_batch)
-                # print(model)
                 loss = model(train_batch)
                 loss = loss / input_arg.grad_accum
                 loss.mean().backward()
@@ -100,8 +67,6 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer
                 if total_iter % 100 == 0 and total_iter != 0:  # monitoring
                     write_log(
                         f"epoch: {epoch}, tag: {mtag}, model: {model.module.__class__.__name__}, step: {total_iter}, loss: {t_loss / total_iter if total_iter > 0 else 0}, total:{total_iter_length}")
-
-                del train_batch
             else:
                 end = True
         pbar.update(1)
@@ -122,7 +87,7 @@ def model_eval(models, test_dataset, fname, epoch, writer):
         iters = [iter(ds) for ds in test_dataset]
         end = False
         total_iter_length = len(iters[0])
-        pbar = tqdm(total=total_iter_length, desc='eval')
+        pbar = tqdm(total=total_iter_length)
         while not end:
             for model, batch in zip(models, iters):
                 test_batch = next(batch, None)
@@ -170,17 +135,11 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
             test_ds = gen_once.loadOnceDataset(test_file, pretrained=pretrained_config, maxlen=input_arg.maxlen,
                                                cache=input_arg.cache)
             model = gen_once.Once(tokenizer, pretrained, maxlen=input_arg.maxlen)
-        elif "mask" in model_type:
-            train_ds = gen_mask.loadMaskDataset(train_file, pretrained_config=pretrained_config,
-                                                maxlen=input_arg.maxlen,
-                                                cache=input_arg.cache)
-            test_ds = gen_mask.loadMaskDataset(test_file, pretrained_config=pretrained_config, maxlen=input_arg.maxlen,
-                                               cache=input_arg.cache)
-            model = gen_mask.Mask(tokenizer, pretrained, maxlen=input_arg.maxlen)
         elif "onebyone" in model_type:
             panel = nlp2.Panel()
             inputted_arg = {"pretrained_config": pretrained_config, "maxlen": input_arg.maxlen,
-                            "cache": input_arg.cache, "likelihood": model_type}
+                            "cache": input_arg.cache, "likelihood": model_type,
+                            "force_cpu": input_arg.force_cpu}
             all_arg = nlp2.function_get_all_arg_with_value(gen_onebyone.loadOneByOneDataset)
             if input_arg.enable_arg_panel:
                 for missarg in nlp2.function_check_missing_arg(gen_onebyone.loadOneByOneDataset,
@@ -188,54 +147,14 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
                     panel.add_element(k=missarg, v=all_arg[missarg], msg=missarg, default=all_arg[missarg])
                 filled_arg = panel.get_result_dict()
                 inputted_arg.update(filled_arg)
-
-            get_gpu_usage('before loading')
-            get_cpu_usage('before loading')
-            get_ram_usage('before loading')
-
-            train_ds = gen_onebyone.loadOneByOneDataset(train_file, **inputted_arg)  # TODO return
+            train_ds = gen_onebyone.loadOneByOneDataset(train_file, **inputted_arg)
             test_ds = gen_onebyone.loadOneByOneDataset(test_file, **inputted_arg)
-
-            print('train_ds from dl', next(iter(train_ds)))
-
-            time.sleep(10)
-            print('train-167')
-            get_gpu_usage('loaded data')
-            get_cpu_usage('loaded data')
-            get_ram_usage('loaded data')
-            time.sleep(5)
-            # with torch.cuda.device(0):
             model = gen_onebyone.OneByOne(tokenizer, pretrained, **inputted_arg)
-        elif 'clas' in model_type:
-            train_ds = classifier.loadClassifierDataset(train_file, pretrained=pretrained_config, cache=input_arg.cache)
-            test_ds = classifier.loadClassifierDataset(test_file, pretrained=pretrained_config, cache=input_arg.cache)
-            model = classifier.MtClassifier(train_ds.task, tokenizer, pretrained)
-        elif 'tag' in model_type:
-            if "row" in model_type:
-                train_ds = tag.loadRowTaggerDataset(train_file, pretrained=pretrained_config, maxlen=input_arg.maxlen,
-                                                    cache=input_arg.cache)
-                test_ds = tag.loadRowTaggerDataset(test_file, pretrained=pretrained_config, maxlen=input_arg.maxlen,
-                                                   cache=input_arg.cache)
-            elif "col" in model_type:
-                train_ds = tag.loadColTaggerDataset(train_file, pretrained=pretrained_config, maxlen=input_arg.maxlen,
-                                                    cache=input_arg.cache)
-                test_ds = tag.loadColTaggerDataset(test_file, pretrained=pretrained_config, maxlen=input_arg.maxlen,
-                                                   cache=input_arg.cache)
-            model = tag.Tagger(train_ds.label, tokenizer, pretrained, maxlen=input_arg.maxlen)
-        elif 'qa' in model_type:
-            train_ds = qa.loadQADataset(train_file, pretrained=pretrained_config, cache=input_arg.cache)
-            test_ds = qa.loadQADataset(test_file, pretrained=pretrained_config, cache=input_arg.cache)
-            model = qa.QA(tokenizer, pretrained, maxlen=input_arg.maxlen)
 
-        print(device, type(device))
+        print('Model device:', device)
         model = model.to(device)
-        print('Transfered model')
-
-        get_gpu_usage('Transfered model')
-        get_cpu_usage('Transfered model')
-        get_ram_usage('Transfered model')
-        # train_ds_maxlen = train_ds.__len__() if train_ds.__len__() > train_ds_maxlen else train_ds_maxlen
-        # test_ds_maxlen = test_ds.__len__() if test_ds.__len__() > test_ds_maxlen else test_ds_maxlen
+        train_ds_maxlen = train_ds.__len__() if train_ds.__len__() > train_ds_maxlen else train_ds_maxlen
+        test_ds_maxlen = test_ds.__len__() if test_ds.__len__() > test_ds_maxlen else test_ds_maxlen
         train_dataset.append(train_ds)
         test_dataset.append(test_ds)
         models.append(model)
@@ -266,25 +185,12 @@ def main():
     parser.add_argument("--resume", help='resume training')
     parser.add_argument("--cache", action='store_true', help='cache training data')
     parser.add_argument("--enable_arg_panel", action='store_true', help="enable panel to input argument")
+    parser.add_argument("--force_cpu", action='store_true', help="Force using CPU")
     global input_arg
     input_arg = parser.parse_args()
-
-    print(input_arg, os.environ['PROJECTPATH'])
-    input_arg.train[0] = os.path.join(os.environ['PROJECTPATH'], input_arg.train[0])
-    input_arg.test[0] = os.path.join(os.environ['PROJECTPATH'], input_arg.test[0])
-    # input_arg['test'][0] = os.environ['PATH'] + input_arg['test'][0]
-    # input_arg['test'][0] = os.environ['PATH'] + input_arg['test'][0]
-
-    # device = 'cpu'  #
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'  # TODO try cpu
-
-    folders = os.listdir(input_arg.savedir)
-    print(input_arg.savedir, folders)
-    input_arg.savedir = os.path.join(input_arg.savedir, str(len(folders)))
-
+    device = 'cuda' if torch.cuda.is_available() and not input_arg.force_cpu else 'cpu'
     nlp2.get_dir_with_notexist_create(input_arg.savedir)
 
-    write_log(datetime.datetime.now())
     write_log("TRAIN PARAMETER")
     write_log("=======================")
     [write_log(var, ':', vars(input_arg)[var]) for var in vars(input_arg)]
@@ -296,8 +202,6 @@ def main():
         tokenizer = BertTokenizer.from_pretrained(pretrained_config)
     else:
         tokenizer = AutoTokenizer.from_pretrained(pretrained_config)
-
-    # with torch.cuda.device(0):
     pretrained = AutoModel.from_pretrained(pretrained_config)
 
     # handling add tokens
@@ -321,32 +225,21 @@ def main():
                                                                                                 tokenizer, pretrained,
                                                                                                 device)
     # balance sample for multi-task
-    # for ds in train_dataset:
-    #    ds.increase_with_sampling(train_ds_maxlen)
-    # for ds in test_dataset:
-    #    ds.increase_with_sampling(test_ds_maxlen)
-
-    shuffle = not isinstance(train_dataset[0],
-                             data.IterableDataset)  # use shuffle only for usual Dataset, not for IterableDataset
-    num_workers = 0 if isinstance(train_dataset[0], data.IterableDataset) else input_arg.worker
-    for x in train_dataset[0]:
-        print('for dataset', x)
-        break
+    for ds in train_dataset:
+        ds.increase_with_sampling(train_ds_maxlen)
+    for ds in test_dataset:
+        ds.increase_with_sampling(test_ds_maxlen)
 
     train_dataset = [data.DataLoader(dataset=ds,
-                                     batch_size=input_arg.batch, #TODO return
-                                     shuffle=shuffle,
+                                     batch_size=input_arg.batch,
+                                     shuffle=True,
                                      # collate_fn=data_collate,
-                                     num_workers=num_workers) for ds in train_dataset]
+                                     num_workers=input_arg.worker) for ds in train_dataset]
     test_dataset = [data.DataLoader(dataset=ds,
-                                    batch_size=input_arg.batch, #TODO return
-                                    shuffle=shuffle,
+                                    batch_size=input_arg.batch,
+                                    shuffle=True,
                                     # collate_fn=data_collate,
-                                    num_workers=num_workers) for ds in test_dataset]
-
-    for x in train_dataset[0]:
-        print('for dataloader', x)
-        break
+                                    num_workers=input_arg.worker) for ds in test_dataset]
 
     writer = tensorboard.SummaryWriter() if input_arg.tensorboard else None
     start_epoch = 1

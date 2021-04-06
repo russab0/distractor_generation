@@ -4,11 +4,7 @@ from transformers import *
 import argparse
 import torch
 import gen_once
-import gen_mask
 import gen_onebyone
-import qa
-import classifier
-import tag
 from tqdm import tqdm
 from utility.eval_metric import EvalMetric
 import csv
@@ -58,26 +54,11 @@ def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=
     if "once" in type:
         eval_dataset = gen_once.get_data_from_file(model_dataset) if model_dataset else None
         model = gen_once.Once(tokenizer, pretrained, maxlen=maxlen)
-    elif "mask" in type:
-        eval_dataset = gen_mask.get_data_from_file(model_dataset) if model_dataset else None
-        model = gen_mask.Mask(tokenizer, pretrained, maxlen=maxlen)
     elif "onebyone" in type:
         eval_dataset = gen_once.get_data_from_file(model_dataset) if model_dataset else None
-        model = gen_onebyone.OneByOne(tokenizer, pretrained, maxlen=maxlen)
-    elif 'classify' in type or 'clas' in type:
-        eval_dataset = classifier.get_data_from_file(model_dataset) if model_dataset else None
-        model = classifier.MtClassifier(torchpack['task-label'], tokenizer, pretrained)
-    elif 'tag' in type:
-        if model_dataset and "row" in type:
-            eval_dataset = tag.get_data_from_file_row(model_dataset)
-        elif model_dataset and "col" in type:
-            eval_dataset = tag.get_data_from_file_col(model_dataset)
-        else:
-            eval_dataset = None
-        model = tag.Tagger(torchpack['label'], tokenizer, pretrained, maxlen=maxlen)
-    elif 'qa' in type:
-        eval_dataset = qa.get_data_from_file(model_dataset) if model_dataset else None
-        model = qa.QA(tokenizer, pretrained, maxlen=maxlen)
+        model = gen_onebyone.OneByOne(tokenizer, pretrained, maxlen=maxlen, force_cpu=arg.force_cpu)
+    else:
+        raise NotImplementedError('Unknown type of task')
 
     model = model.to(device)
     model.load_state_dict(models_state[type_ind], strict=False)
@@ -96,6 +77,8 @@ def load_predict_parameter(model, enable_arg_panel=False):
 
 
 def main():
+    global arg
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, type=str, help="model path")
     parser.add_argument("--config", type=str, help='pre-trained model path after add token')
@@ -103,6 +86,7 @@ def main():
     parser.add_argument("--valid", required=True, type=str, nargs='+', help="evaluate data path")
     parser.add_argument("--print", action='store_true', help="print each pair of evaluate data")
     parser.add_argument("--enable_arg_panel", action='store_true', help="enable panel to input argument")
+    parser.add_argument("--force_cpu", action='store_true', help="Force using CPU")
     arg = parser.parse_args()
 
     valid = arg.valid[0]

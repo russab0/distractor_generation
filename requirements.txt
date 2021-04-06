@@ -12,14 +12,12 @@ python-dotenv~=0.15.0
 inquirer~=2.7.0
 tensorboardX~=2.1
 nlp2~=1.8.29
-transformers~=4.3.2
+transformers>=2.5.1
 jsonlines
 sklearn
 tqdm~=4.56.2
-numpy~=1.20.1
+numpy~=1.19.1
 scipy
 torch~=1.6.0
 
 setuptools~=47.1.0
-
-nvidia-ml-py3
