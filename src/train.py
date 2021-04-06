@@ -12,6 +12,7 @@ from itertools import zip_longest
 import os
 import gen_once
 import gen_onebyone
+import wandb
 
 from src.utility import get_freqK_unk_token
 from src.utility import BalancedDataParallel
@@ -61,10 +62,18 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer
                 if input_arg.tensorboard:
                     writer.add_scalar("loss/step", loss.mean().item(), epoch)
                 if total_iter % 100 == 0 and total_iter != 0:  # monitoring
+                    log_info = {
+                        'epoch': epoch,
+                        'tag': mtag,
+                        'model': model.module.__class__.__name__,
+                        'step': total_iter,
+                        'loss': t_loss / total_iter if total_iter > 0 else 0,
+                        'total': total_iter_length,
+                    }
                     write_log(
-                        f"epoch: {epoch}, tag: {mtag}, model: {model.module.__class__.__name__}, step: {total_iter}, "
-                        f"loss: {t_loss / total_iter if total_iter > 0 else 0}, total:{total_iter_length}"
+                        ", ".join(f"{key}: {value}" for key, value in log_info.items())
                     )
+                    wandb.log({'loss/train': log_info['loss'], 'epoch': log_info['epoch']})
             else:
                 end = True
         pbar.update(1)
@@ -162,6 +171,9 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
 
 
 def main():
+    global input_arg
+    wandb.init(project='distractor_generation', entity='russab0')
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch", type=int, default=20, help="batch size, default 20")
     parser.add_argument("--lr", type=float, nargs='+', default=[5e-5], help="learning rate, default 5e-5")
@@ -188,8 +200,9 @@ def main():
     parser.add_argument("--cache", action='store_true', help='cache training data')
     parser.add_argument("--enable_arg_panel", action='store_true', help="enable panel to input argument")
     parser.add_argument("--force_cpu", action='store_true', help="Force using CPU")
-    global input_arg
+
     input_arg = parser.parse_args()
+    wandb.config.update(input_arg)
     device = 'cuda' if torch.cuda.is_available() and not input_arg.force_cpu else 'cpu'
     nlp2.get_dir_with_notexist_create(input_arg.savedir)
 
@@ -287,9 +300,14 @@ def main():
         write_log(f"=========eval at epoch={epoch}=========")
         eval_avg_loss = model_eval(models, test_dataset, fname, epoch, writer)
 
+        wandb.log({
+            'loss/train_epoch': train_avg_loss,
+            'loss/eval_epoch': eval_avg_loss,
+        })
         if input_arg.tensorboard:
             writer.add_scalar("train_loss/epoch", train_avg_loss, epoch)
             writer.add_scalar("eval_loss/epoch", eval_avg_loss, epoch)
+    wandb.save()
 
 
 if __name__ == "__main__":
