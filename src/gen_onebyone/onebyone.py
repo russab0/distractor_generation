@@ -2,17 +2,13 @@ import json
 import sys
 import os
 
-from src.utility import tok_sep
-
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(os.path.join(dir_path, os.pardir)))
 
-import torch
-import torch.nn as nn
 from gen_onebyone.data_loader import get_feature_from_data
 from itertools import combinations
 from torch.nn.functional import softmax
-from math import log, exp
+from math import log
 from utility.loss import *
 from utility.tok import *
 import numpy as np
@@ -87,8 +83,10 @@ class OneByOne(nn.Module):
             if not filteredOne:
                 break
 
-    def predict(self, input='', topK=1, topP=0.85, mode=['greedy', 'topK', 'topP'], decodenum=1, filtersim=True,
+    def predict(self, input='', topK=1, topP=0.85, mode=None, decodenum=1, filtersim=True,
                 reserved_len=0, task=None):
+        if mode is None:
+            mode = ['greedy', 'topK', 'topP']
         filtersim = json.loads(str(filtersim).lower())
         topK = int(topK)
         topP = float(topP)

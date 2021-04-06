@@ -1,5 +1,3 @@
-import inspect
-
 from transformers import *
 import argparse
 import torch
@@ -10,6 +8,8 @@ from utility.eval_metric import EvalMetric
 import csv
 import inquirer
 import nlp2
+
+arg = dict()
 
 
 def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=None):
@@ -41,7 +41,7 @@ def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=
         config = torchpack['model_config'] if 'model_config' in torchpack else torchpack['bert']
     model_types = [torchpack['type']] if not isinstance(torchpack['type'], list) else torchpack['type']
     models_state = torchpack['models'] if 'models' in torchpack else [torchpack['model_state_dict']]
-    type = model_types[type_ind]
+    type_ = model_types[type_ind]
 
     # load model
     if 'albert_chinese' in config:
@@ -50,11 +50,11 @@ def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=
         tokenizer = AutoTokenizer.from_pretrained(config)
     pretrained = AutoModel.from_pretrained(config)
 
-    type = type.lower()
-    if "once" in type:
+    type_ = type_.lower()
+    if "once" in type_:
         eval_dataset = gen_once.get_data_from_file(model_dataset) if model_dataset else None
         model = gen_once.Once(tokenizer, pretrained, maxlen=maxlen)
-    elif "onebyone" in type:
+    elif "onebyone" in type_:
         eval_dataset = gen_once.get_data_from_file(model_dataset) if model_dataset else None
         model = gen_onebyone.OneByOne(tokenizer, pretrained, maxlen=maxlen, force_cpu=arg.force_cpu)
     else:
@@ -98,44 +98,31 @@ def main():
         eval_metrics = [EvalMetric(model.tokenizer)]
 
     for i in tqdm(eval_dataset):
-        tasks = i[0]
         task = i[1]
-        input = i[2]
+        input_ = i[2]
         target = i[3]
 
-        predict_parameter.update({'input': input})
+        predict_parameter.update({'input': input_})
         if 'task' not in predict_parameter:
             predict_parameter.update({'task': task})
 
         result, result_dict = model.predict(**predict_parameter)
         for eval_pos, eval_metric in enumerate(eval_metrics):
-            if 'QA' in model.__class__.__name__:
-                target = " ".join(input.split(" ")[int(target[0]): int(target[1])])
-            elif 'OneByOne' in model.__class__.__name__:
+            if 'OneByOne' in model.__class__.__name__:
                 if len(result_dict['label_map']) < eval_pos:
                     print("Decode size smaller than decode num:", result_dict['label_map'])
                 predicted = result_dict['label_map'][eval_pos][0] if 'label_map' in result_dict else ''
-            elif 'Mask' in model.__class__.__name__:
-                target = target.split(" ")
-                predicted = result
-            elif 'Tagger' in model.__class__.__name__:
-                target = target.split(" ")
-                if 'label_map' in result_dict:
-                    predicted = " ".join([list(d.values())[0] for d in result_dict['label_map']])
-                    predicted = predicted.split(" ")
-                else:
-                    predicted = [""] * len(target)
             else:
                 predicted = result[0] if len(result) > 0 else ''
 
             if arg.print:
                 print('===eval===')
-                print("input: ", input)
+                print("input: ", input_)
                 print("target: ", target)
                 print("predicted: ", predicted)
                 print('==========')
 
-            eval_metric.add_record(input, predicted, target)
+            eval_metric.add_record(input_, predicted, target)
 
     for eval_pos, eval_metric in enumerate(eval_metrics):
         argtype = "_dataset" + valid.replace("/", "_").replace(".", "")

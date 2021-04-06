@@ -1,12 +1,8 @@
 import argparse
 import random
-from collections import Iterable, defaultdict
 
 import nlp2
 import torch
-from torch import nn
-from torch._six import container_abcs
-from torch.utils.data.dataloader import default_collate
 from tqdm import tqdm
 from transformers import AdamW, BertTokenizer, AutoTokenizer, AutoModel
 import numpy as np
@@ -66,7 +62,9 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer
                     writer.add_scalar("loss/step", loss.mean().item(), epoch)
                 if total_iter % 100 == 0 and total_iter != 0:  # monitoring
                     write_log(
-                        f"epoch: {epoch}, tag: {mtag}, model: {model.module.__class__.__name__}, step: {total_iter}, loss: {t_loss / total_iter if total_iter > 0 else 0}, total:{total_iter_length}")
+                        f"epoch: {epoch}, tag: {mtag}, model: {model.module.__class__.__name__}, step: {total_iter}, "
+                        f"loss: {t_loss / total_iter if total_iter > 0 else 0}, total:{total_iter_length}"
+                    )
             else:
                 end = True
         pbar.update(1)
@@ -150,6 +148,8 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
             train_ds = gen_onebyone.loadOneByOneDataset(train_file, **inputted_arg)
             test_ds = gen_onebyone.loadOneByOneDataset(test_file, **inputted_arg)
             model = gen_onebyone.OneByOne(tokenizer, pretrained, **inputted_arg)
+        else:
+            raise NotImplementedError('Wrong model type')
 
         print('Model device:', device)
         model = model.to(device)
@@ -176,8 +176,10 @@ def main():
                         choices=['once', 'twice', 'onebyone', 'clas', 'tagRow', 'tagCol', 'qa',
                                  'onebyone-neg', 'onebyone-pos', 'onebyone-both', 'mask'], help="model task")
     parser.add_argument("--tag", type=str, nargs='+', help="tag to identity task in multi-task")
-    parser.add_argument("--config", type=str, default='bert-base-multilingual-cased', required=True,
-                        help='distilbert-base-multilingual-cased|bert-base-multilingual-cased|voidful/albert_chinese_small')
+    parser.add_argument(
+        "--config", type=str, default='bert-base-multilingual-cased', required=True,
+        help='distilbert-base-multilingual-cased|bert-base-multilingual-cased|voidful/albert_chinese_small'
+    )
     parser.add_argument("--seed", type=int, default=609, help="random seed, default 609")
     parser.add_argument("--worker", type=int, default=8, help="number of worker on pre-processing, default 8")
     parser.add_argument("--grad_accum", type=int, default=1, help="gradient accumulation, default 1")

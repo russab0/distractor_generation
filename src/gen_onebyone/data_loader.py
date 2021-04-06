@@ -7,9 +7,9 @@ from random import choice
 import numpy as np
 from torch.utils import data
 from transformers import AutoTokenizer, BertTokenizer
-from tqdm import tqdm
 from utility.tok import *
 import gen_once
+from tqdm import tqdm
 
 
 class loadOneByOneDataset(data.Dataset):
@@ -23,7 +23,7 @@ class loadOneByOneDataset(data.Dataset):
         else:
             tokenizer = AutoTokenizer.from_pretrained(pretrained_config)
 
-        neg_info = "_" + likelihood + "_pos_" + str(pos_ratio) + "_neg_" + str(pos_ratio)
+        neg_info = "_" + likelihood + "_pos_" + str(pos_ratio) + "_neg_" + str(neg_ratio)
         cache_path = fpath + "_maxlen" + str(maxlen) + "_" + pretrained_config.replace("/", "_") + neg_info + ".cache"
         if os.path.isfile(cache_path) and cache:
             with open(cache_path, "rb") as cf:
