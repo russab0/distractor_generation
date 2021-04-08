@@ -10,147 +10,133 @@ from transformers import AutoTokenizer, BertTokenizer
 from utility.tok import *
 import gen_once
 from tqdm import tqdm
+import datasets
+
+COLUMNS = ['source_text', 'target_text', 'negative_text']
 
 
-class loadOneByOneDataset(data.Dataset):
+def loadOneByOneDataset(fpath, pretrained_config, maxlen=510, cache=False, likelihood='', pos_ratio=1, neg_ratio=1,
+                        **kwargs):
+    if 'albert_chinese' in pretrained_config:
+        tokenizer = BertTokenizer.from_pretrained(pretrained_config)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_config)
 
-    def __init__(self, fpath, pretrained_config, maxlen=510, cache=False, likelihood='', pos_ratio=1, neg_ratio=1,
-                 **kwargs):
-        self.maxlen = maxlen
-        sample = []
-        if 'albert_chinese' in pretrained_config:
-            tokenizer = BertTokenizer.from_pretrained(pretrained_config)
-        else:
-            tokenizer = AutoTokenizer.from_pretrained(pretrained_config)
+    dataset = datasets.load_dataset('csv',
+                                    data_files=fpath,
+                                    names=COLUMNS,
+                                    split='train')
+    print('loaded', dataset)
 
-        neg_info = "_" + likelihood + "_pos_" + str(pos_ratio) + "_neg_" + str(neg_ratio)
-        cache_path = fpath + "_maxlen" + str(maxlen) + "_" + pretrained_config.replace("/", "_") + neg_info + ".cache"
-        if os.path.isfile(cache_path) and cache:
-            with open(cache_path, "rb") as cf:
-                sample = pickle.load(cf)
-        else:
-            total_data = 0
-            data_invalid = 0
-            for i in get_data_from_file(fpath):
-                tasks, task, input, target, negative_text = i
-                input = input.strip()
-                tokenized_target = tokenizer.tokenize(" ".join(target))
-                # each word in sentence
-                for j in range(1, len(tokenized_target) + 1):
-                    feature = get_feature_from_data(tokenizer, maxlen, input, tokenized_target[:j - 1],
-                                                    tokenized_target[:j])
-                    if "neg" in likelihood or 'both' in likelihood:
-                        # formatting neg data in csv
-                        if negative_text is None:
-                            ntext_arr = [tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
-                        elif "[SEP]" in negative_text:
-                            ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
-                        else:
-                            ntext_arr = [negative_text.strip()]
-                        # adding neg data
-                        for neg_text in ntext_arr:
-                            feature_neg = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
-                                                                                     ntarget=neg_text)
-                            feature['ntarget'] = feature_neg['ntarget']
-                            if self.check_feature_valid(feature):
-                                sample.append(feature)
-                            else:
-                                data_invalid += 1
-                            total_data += 1
-                    else:
-                        if self.check_feature_valid(feature):
-                            sample.append(feature)
-                        else:
-                            data_invalid += 1
-                        total_data += 1
+    dataset = dataset.map(
+        lambda x: mapping(
+            item=x,
+            tokenizer=tokenizer,
+            maxlen=maxlen,
+            likelihood=likelihood,
+            pos_ratio=pos_ratio,
+            neg_ratio=neg_ratio,
+        ),
+        batched=True,
+        batch_size=1,
+        remove_columns=COLUMNS
+    )
+    # dataset.set_format('torch')
 
-                # end of the last word
-                feature = get_feature_from_data(tokenizer, maxlen, input, tokenized_target, [tok_sep(tokenizer)])
-                if "neg" in likelihood or 'both' in likelihood:
-                    # formatting neg data in csv
-                    if negative_text is None:
-                        ntext_arr = [tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
-                    elif "[SEP]" in negative_text:
-                        ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
-                    else:
-                        ntext_arr = [negative_text.strip()]
-                    # adding neg data
-                    for neg_text in ntext_arr:
-                        feature_neg = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
-                                                                                 ntarget=neg_text)
-                        feature['ntarget'] = feature_neg['ntarget']
-                        if self.check_feature_valid(feature):
-                            sample.append(feature)
-                        else:
-                            data_invalid += 1
-                        total_data += 1
+    return dataset
+
+
+def mapping(item, tokenizer, maxlen, likelihood, pos_ratio, neg_ratio):
+    total_data = 0
+    data_invalid = 0
+
+    input = item['source_text'][0]
+    target = item['target_text'][0].strip().split(" ")
+    negative_text = item['negative_text'][0].strip()
+
+    input = input.strip()
+    tokenized_target = tokenizer.tokenize(" ".join(target))
+
+    # each word in sentence
+    sample = []
+    for j in range(1, len(tokenized_target) + 1):
+        feature = get_feature_from_data(tokenizer, maxlen, input, tokenized_target[:j - 1],
+                                        tokenized_target[:j])
+        if "neg" in likelihood or 'both' in likelihood:
+            # formatting neg data in csv
+            if negative_text is None:
+                ntext_arr = [tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
+            elif "[SEP]" in negative_text:
+                ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
+            else:
+                ntext_arr = [negative_text.strip()]
+            # adding neg data
+            for neg_text in ntext_arr:
+                feature_neg = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
+                                                                         ntarget=neg_text)
+                feature['ntarget'] = feature_neg['ntarget']
+                if check_feature_valid(feature, maxlen):
+                    print(feature, type(feature))
+                    sample.append(feature)
                 else:
-                    if self.check_feature_valid(feature):
-                        sample.append(feature)
-                    else:
-                        data_invalid += 1
-                    total_data += 1
-
-                # whole sentence masking
-                if 'pos' in likelihood or 'both' in likelihood:
-                    feature = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
-                                                                         " ".join(target))
-                    if self.check_feature_valid(feature):
-                        for _ in range(int(pos_ratio)):
-                            sample.append(feature)
-                    else:
-                        data_invalid += 1
-                    total_data += 1
-                # elif "neg" in likelihood or 'both' in likelihood:
-                #     # formatting neg data in csv
-                #     if negative_text is None:
-                #         ntext_arr = [tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
-                #     elif "[SEP]" in negative_text:
-                #         ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
-                #     else:
-                #         ntext_arr = [negative_text.strip()]
-                #
-                #     for neg_text in ntext_arr:
-                #         if 'neg' in likelihood:
-                #             feature = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
-                #                                                                  ntarget=neg_text)
-                #         elif 'both' in likelihood:
-                #             feature = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
-                #                                                                  " ".join(target),
-                #                                                                  ntarget=neg_text)
-                #         if self.check_feature_valid(feature):
-                #             for _ in range(int(neg_ratio)):
-                #                 sample.append(feature)
-                #         else:
-                #             data_invalid += 1
-                #         total_data += 1
-
-            print("Processed " + str(total_data) + " data, removed " + str(
-                data_invalid) + " data that exceed the maximum length.")
-
-            if cache:
-                with open(cache_path, 'wb') as cf:
-                    pickle.dump(sample, cf)
-        self.sample = sample
-
-    def increase_with_sampling(self, total):
-        inc_samp = [choice(self.sample) for _ in range(total - len(self.sample))]
-        self.sample.extend(inc_samp)
-
-    def check_feature_valid(self, feature):
-        if len(feature['input']) == len(feature['target']) == len(feature['ntarget']) == self.maxlen:
-            if feature['target'][feature['start']] == feature['ntarget'][feature['start']]:
-                feature['ntarget'][feature['start']] = -1
-            return True
+                    data_invalid += 1
+                total_data += 1
         else:
-            return False
+            #
+            if check_feature_valid(feature, maxlen):
+                sample.append(feature)
+            else:
+                data_invalid += 1
+            total_data += 1
 
-    def __len__(self):
-        return len(self.sample)
+    # end of the last word
+    feature = get_feature_from_data(tokenizer, maxlen, input, tokenized_target, [tok_sep(tokenizer)])
+    if "neg" in likelihood or 'both' in likelihood:
+        # formatting neg data in csv
+        if negative_text is None:
+            ntext_arr = [tokenizer.convert_tokens_to_string(tokenized_target[:j - 1])]
+        elif "[SEP]" in negative_text:
+            ntext_arr = [ntext.strip() for ntext in negative_text.split("[SEP]")]
+        else:
+            ntext_arr = [negative_text.strip()]
+        # adding neg data
+        for neg_text in ntext_arr:
+            feature_neg = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
+                                                                     ntarget=neg_text)
+            feature['ntarget'] = feature_neg['ntarget']
+            if check_feature_valid(feature, maxlen):
+                sample.append(feature)
+            else:
+                data_invalid += 1
+            total_data += 1
+    else:
+        if check_feature_valid(feature, maxlen):
+            sample.append(feature)
+        else:
+            data_invalid += 1
+        total_data += 1
 
-    def __getitem__(self, idx):
-        self.sample[idx].update((k, np.asarray(v)) for k, v in self.sample[idx].items())
-        return self.sample[idx]
+        # whole sentence masking
+        if 'pos' in likelihood or 'both' in likelihood:
+            feature = gen_once.data_loader.get_feature_from_data(tokenizer, maxlen, input,
+                                                                 " ".join(target))
+            if check_feature_valid(feature, maxlen):
+                for _ in range(int(pos_ratio)):
+                    sample.append(feature)
+            else:
+                data_invalid += 1
+            total_data += 1
+
+    return {k: np.array([dic[k] for dic in sample]) for k in sample[0]}  # from list of dicts to dict of lists
+
+
+def check_feature_valid(feature, maxlen):
+    if len(feature['input']) == len(feature['target']) == len(feature['ntarget']) == maxlen:
+        if feature['target'][feature['start']] == feature['ntarget'][feature['start']]:
+            feature['ntarget'][feature['start']] = -1
+        return True
+    else:
+        return False
 
 
 def get_data_from_file(fpath):

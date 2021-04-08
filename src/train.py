@@ -35,7 +35,10 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer
     optims = []
     models = []
     for i, m in enumerate(models_list):
-        model = BalancedDataParallel(input_arg.batch, m)
+        if torch.cuda.device_count() > 1:
+            model = BalancedDataParallel(input_arg.batch, m)
+        else:
+            model = m
         model.train()
         models.append(model)
         optims.append(optimizer(m, input_arg.lr[i] if i < len(input_arg.lr) else input_arg.lr[0]))
@@ -65,7 +68,7 @@ def model_train(models_list, train_dataset, models_tag, input_arg, epoch, writer
                     log_info = {
                         'epoch': epoch,
                         'tag': mtag,
-                        'model': model.module.__class__.__name__,
+                        'model': model.__class__.__name__,
                         'step': total_iter,
                         'loss': t_loss / total_iter if total_iter > 0 else 0,
                         'total': total_iter_length,
@@ -239,11 +242,8 @@ def main():
     models, train_dataset, test_dataset, train_ds_maxlen, test_ds_maxlen = _load_model_and_data(pretrained_config,
                                                                                                 tokenizer, pretrained,
                                                                                                 device)
-    # balance sample for multi-task
-    for ds in train_dataset:
-        ds.increase_with_sampling(train_ds_maxlen)
-    for ds in test_dataset:
-        ds.increase_with_sampling(test_ds_maxlen)
+    train_dataset[0].set_format('torch')
+    test_dataset[0].set_format('torch')
 
     train_dataset = [data.DataLoader(dataset=ds,
                                      batch_size=input_arg.batch,
