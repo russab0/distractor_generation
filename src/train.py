@@ -314,7 +314,7 @@ def main():
         if input_arg.tensorboard:
             writer.add_scalar("train_loss/epoch", train_avg_loss, epoch)
             writer.add_scalar("eval_loss/epoch", eval_avg_loss, epoch)
-    wandb.save()
+    wandb.save(os.path.join(input_arg.savedir, f'{input_arg.epoch}.pt'))
 
 
 if __name__ == "__main__":
