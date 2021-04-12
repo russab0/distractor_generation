@@ -10,6 +10,7 @@ import tensorboardX as tensorboard
 from torch.utils import data
 from itertools import zip_longest
 import os
+import datetime
 import gen_once
 import gen_onebyone
 import wandb
@@ -175,7 +176,7 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
 
 def main():
     global input_arg
-    wandb.init(project='distractor_generation', entity='russab0')
+    wandb_run = wandb.init(project='distractor_generation', entity='russab0')
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch", type=int, default=20, help="batch size, default 20")
@@ -205,10 +206,16 @@ def main():
     parser.add_argument("--force_cpu", action='store_true', help="Force using CPU")
 
     input_arg = parser.parse_args()
-    wandb.config.update(input_arg)
     device = 'cuda' if torch.cuda.is_available() and not input_arg.force_cpu else 'cpu'
-    nlp2.get_dir_with_notexist_create(input_arg.savedir)
 
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    savename = f'{wandb_run.name.split("-")[-1]}-{"-".join(wandb_run.name.split("-")[:-1])}-{now}'
+    input_arg.savedir = os.path.join(input_arg.savedir, savename)
+    nlp2.get_dir_with_notexist_create(input_arg.savedir)
+    wandb.config.update(input_arg)
+
+    write_log('now', now)
+    write_log('WANDB: ', wandb_run.id, '/', wandb_run.name, '\n')
     write_log("TRAIN PARAMETER")
     write_log("=======================")
     [write_log(var, ':', vars(input_arg)[var]) for var in vars(input_arg)]
