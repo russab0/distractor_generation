@@ -14,6 +14,15 @@ import datetime
 import gen_once
 import gen_onebyone
 import wandb
+import sys
+import pathlib
+
+work_dir = pathlib.Path(os.path.abspath(__file__))
+while work_dir.name != 'distractor_generation':
+    work_dir = work_dir.parent
+work_dir = str(work_dir)
+sys.path.append(work_dir)
+os.chdir(work_dir)
 
 from src.utility import get_freqK_unk_token
 from src.utility import BalancedDataParallel
