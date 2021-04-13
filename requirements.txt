@@ -21,3 +21,7 @@ scipy
 torch~=1.6.0
 
 setuptools~=47.1.0
+
+datasets~=1.4.1
+wandb~=0.10.25
+sentencepiece
