@@ -11,6 +11,8 @@ from utility.tok import *
 import gen_once
 from tqdm import tqdm
 import datasets
+import hashlib
+import nlp2
 
 COLUMNS = ['source_text', 'target_text', 'negative_text']
 
@@ -28,6 +30,8 @@ def loadOneByOneDataset(fpath, pretrained_config, maxlen=510, cache=False, likel
                                     split='train')
     print('loaded', dataset)
 
+    fun_args = nlp2.function_get_all_arg(get_feature_from_data)
+    fingerprint_name = fpath + 'transformed' + str('handle_exceed_' in fun_args or 'handle_exceed' in fun_args)
     dataset = dataset.map(
         lambda x: mapping(
             item=x,
@@ -39,7 +43,8 @@ def loadOneByOneDataset(fpath, pretrained_config, maxlen=510, cache=False, likel
         ),
         batched=True,
         batch_size=1,
-        remove_columns=COLUMNS
+        remove_columns=COLUMNS,
+        new_fingerprint=hashlib.sha224(bytearray(fingerprint_name, 'utf8')).hexdigest()
     )
     # dataset.set_format('torch')
 
