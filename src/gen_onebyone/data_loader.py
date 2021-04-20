@@ -27,7 +27,8 @@ def loadOneByOneDataset(fpath, pretrained_config, maxlen=510, cache=False, likel
     dataset = datasets.load_dataset('csv',
                                     data_files=fpath,
                                     names=COLUMNS,
-                                    split='train')
+                                    split='train',
+                                    cache_dir=fpath[:fpath.rfind('/')])
     print('loaded', dataset)
 
     fun_args = nlp2.function_get_all_arg(get_feature_from_data)
@@ -87,7 +88,6 @@ def mapping(item, tokenizer, maxlen, likelihood, pos_ratio, neg_ratio):
                     data_invalid += 1
                 total_data += 1
         else:
-            #
             if check_feature_valid(feature, maxlen):
                 sample.append(feature)
             else:
