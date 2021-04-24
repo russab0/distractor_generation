@@ -123,7 +123,7 @@ class EvalMetric:
             if "nlg" in metric:
                 try:
                     from nlgeval import NLGEval
-                except ImportError:
+                except (ImportError, ModuleNotFoundError):
                     print(
                         "nlg-eval package not install, plz install it: pip install git+https://github.com/voidful/nlg-eval.git ; nlg-eval --setup ./nlg-eval-data/")
                     raise
