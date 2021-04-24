@@ -158,43 +158,80 @@ def get_data_from_file(fpath):
             yield tasks, task, input, target, negative_text
 
 
-def get_feature_from_data(tokenizer, maxlen, input, tokenized_previous, tokenized_target=None, ntarget=None,
-                          reserved_len=0):
-    row_dict = dict()
-    tokenized_input = tokenizer.tokenize(input)
-    tokenized_input = [tok_begin(tokenizer)] + tokenized_input[:maxlen - reserved_len - 2] \
-                      + [tok_sep(tokenizer)]
-    tokenized_input.extend(tokenized_previous)
-    tokenized_input.append(tok_mask(tokenizer))
-    tokenized_input_id = tokenizer.convert_tokens_to_ids(tokenized_input)
-    mask_id = [1] * len(tokenized_input)
-    target_start = len(tokenized_input_id) - 1
-    tokenized_input_id.extend([0] * (maxlen - len(tokenized_input_id)))
+# new version
+def handle_exceed(tokenizer, seq, maxlen, mode=['noop', 'remove', 'slide', 'start_slice', 'end_slice'],
+                  keep_after_sep=True):
+    mode = mode[0] if isinstance(mode, list) else mode
+    seq = seq.replace("[MASK]", tok_mask(tokenizer)).replace("[SEP]", tok_sep(tokenizer)).replace("[CLS]",
+                                                                                                  tok_begin(tokenizer))
+    sep_split = seq.split(tok_sep(tokenizer))
+    ext_seq = [tok_sep(tokenizer)] + tokenizer.tokenize(tok_sep(tokenizer).join(sep_split[1:])) \
+        if len(sep_split) > 1 and keep_after_sep else []
+    t_seq = tokenizer.tokenize(sep_split[0])
+    if mode == 'noop':
+        return [t_seq + ext_seq], [[0, len(t_seq + ext_seq)]]
+    if mode == 'remove':
+        if len(t_seq + ext_seq) <= maxlen:
+            return [t_seq + ext_seq], [[0, len(t_seq + ext_seq)]]
+        else:
+            return [], [[0, 0]]
+    if mode == 'slide':
+        return nlp2.sliding_windows(t_seq, maxlen - len(ext_seq), append_seq=ext_seq)
+    if mode == 'start_slice':
+        slices = t_seq[:maxlen - len(ext_seq)]
+        slices.extend(ext_seq)
+        return [slices], [[0, maxlen - len(ext_seq)]]
+    if mode == 'end_slice':
+        start_pos = len(t_seq) + len(ext_seq) - maxlen
+        slices = t_seq[start_pos:]
+        slices.extend(ext_seq)
+        return [slices], [[max(0, start_pos), len(t_seq)]]
 
-    row_dict['target'] = [-1] * maxlen
-    row_dict['ntarget'] = [-1] * maxlen
 
-    tokenized_target_id = None
-    if tokenized_target is not None:
-        tokenized_target_id = [-1] * target_start
-        tokenized_target_id.append(tokenizer.convert_tokens_to_ids(tokenized_target)[-1])
-        tokenized_target_id.extend([-1] * (maxlen - len(tokenized_target_id)))
-        row_dict['target'] = tokenized_target_id
-    if ntarget is not None:
-        tokenized_ntarget = tokenizer.tokenize(ntarget)
-        tokenized_ntarget_id = [-1] * target_start
-        ntarget_token_id = tokenizer.convert_tokens_to_ids(tokenized_ntarget)[-1]
-        tokenized_ntarget_id.append(ntarget_token_id)
-        tokenized_ntarget_id.extend([-1] * (maxlen - len(tokenized_ntarget_id)))
-        if tokenized_target_id is None or tokenized_ntarget_id != tokenized_target_id:
-            row_dict['ntarget'] = tokenized_ntarget_id
+# new version
+def get_feature_from_data(tokenizer, maxlen, input, previous, target=None, ntarget=None, reserved_len=0,
+                          handle_exceed_='end_slice', **kwargs):  # TODO was noop
+    feature_dict_list = []
+    t_input_list, _ = handle_exceed(tokenizer, input, maxlen - 2 - len(previous) - 1,
+                                    handle_exceed_)  # -2 for cls and sep
+    for t_input in t_input_list:
+        row_dict = dict()
+        t_input = [tok_begin(tokenizer)] + \
+                  t_input[:maxlen - reserved_len - 2] + \
+                  [tok_sep(tokenizer)]
+        t_input.extend(previous)
+        t_input.append(tok_mask(tokenizer))
+        t_input_id = tokenizer.convert_tokens_to_ids(t_input)
+        mask_id = [1] * len(t_input)
+        target_start = len(t_input_id) - 1
+        target_end = maxlen
+        t_input_id.extend([0] * (maxlen - len(t_input_id)))
+        row_dict['target'] = [-1] * maxlen
+        row_dict['ntarget'] = [-1] * maxlen
+        tokenized_target_id = None
+        if target is not None:
+            tokenized_target_id = [-1] * target_start
+            tokenized_target_id.append(tokenizer.convert_tokens_to_ids(target)[-1])
+            target_end = len(tokenized_target_id) - 1
+            tokenized_target_id.extend([-1] * (maxlen - len(tokenized_target_id)))
+            row_dict['target'] = tokenized_target_id
+        if ntarget is not None and len(tokenizer.tokenize(ntarget)) > 0:
+            tokenized_ntarget = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(ntarget))
+            tokenized_ntarget_id = [-1] * target_start
+            tokenized_ntarget_id.extend(tokenized_ntarget)
+            tokenized_ntarget_id.extend([-1] * (maxlen - len(tokenized_ntarget_id)))
+            if len(tokenized_ntarget_id) <= maxlen:
+                row_dict['ntarget'] = tokenized_ntarget_id
 
-    mask_id.extend([0] * (maxlen - len(mask_id)))
-    type_id = [0] * len(tokenized_input)
-    type_id.extend([1] * (maxlen - len(type_id)))
-    row_dict['input'] = tokenized_input_id
-    row_dict['type'] = type_id
-    row_dict['mask'] = mask_id
-    row_dict['start'] = target_start
-
-    return row_dict
+        mask_id.extend([0] * (maxlen - len(mask_id)))
+        type_id = [0] * len(t_input)
+        type_id.extend([1] * (maxlen - len(type_id)))
+        row_dict['input'] = t_input_id
+        # row_dict['type'] = type_id
+        row_dict['mask'] = mask_id
+        row_dict['start'] = target_start
+        row_dict['end'] = target_end
+        # ntarget - negative target
+        # target - label
+        feature_dict_list.append(row_dict)
+    return feature_dict_list[0]
