@@ -15,7 +15,7 @@ nlp2~=1.8.29
 transformers>=2.5.1
 jsonlines
 sklearn
-tqdm~=4.56.2
+tqdm~=4.49.0
 numpy~=1.19.1
 scipy
 torch~=1.6.0
