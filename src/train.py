@@ -139,7 +139,7 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
+def _load_model_and_data(pretrained_config, tokenizer, pretrained, device, model_architecture):
     models = []
     train_dataset = []
     test_dataset = []
@@ -169,7 +169,9 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device):
                 inputted_arg.update(filled_arg)
             train_ds = gen_onebyone.loadOneByOneDataset(train_file, **inputted_arg)
             test_ds = gen_onebyone.loadOneByOneDataset(test_file, **inputted_arg)
-            model = gen_onebyone.OneByOne(tokenizer, pretrained, **inputted_arg)
+
+            model_class = gen_onebyone.MODEL_CONFIG_MAPPING[model_architecture]
+            model = model_class(tokenizer, pretrained, **inputted_arg)
         else:
             raise NotImplementedError('Wrong model type')
 
@@ -213,6 +215,9 @@ def main():
     parser.add_argument("--cache", action='store_true', help='cache training data')
     parser.add_argument("--enable_arg_panel", action='store_true', help="enable panel to input argument")
     parser.add_argument("--force_cpu", action='store_true', help="Force using CPU")
+    parser.add_argument("--architecture", type=str,
+                        choices=list(gen_onebyone.MODEL_CONFIG_MAPPING.keys()),
+                        default='standard')
 
     input_arg = parser.parse_args()
     device = 'cuda' if torch.cuda.is_available() and not input_arg.force_cpu else 'cpu'
@@ -255,9 +260,9 @@ def main():
     # load model and data
     models_tag = input_arg.tag if input_arg.tag is not None else [m.lower() + "_" + str(ind) for ind, m in
                                                                   enumerate(input_arg.model)]
-    models, train_dataset, test_dataset, train_ds_maxlen, test_ds_maxlen = _load_model_and_data(pretrained_config,
-                                                                                                tokenizer, pretrained,
-                                                                                                device)
+    models, train_dataset, test_dataset, train_ds_maxlen, test_ds_maxlen = _load_model_and_data(
+        pretrained_config, tokenizer, pretrained, device, model_architecture=input_arg.architecture
+    )
     train_dataset[0].set_format('torch')
     test_dataset[0].set_format('torch')
 
