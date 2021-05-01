@@ -181,7 +181,7 @@ def handle_exceed(tokenizer, seq, maxlen, mode=['noop', 'remove', 'slide', 'star
         slices = t_seq[:maxlen - len(ext_seq)]
         slices.extend(ext_seq)
         return [slices], [[0, maxlen - len(ext_seq)]]
-    if mode == 'end_slice':
+    if mode == 'end_slice':  # seems like it does not work
         start_pos = len(t_seq) + len(ext_seq) - maxlen
         slices = t_seq[start_pos:]
         slices.extend(ext_seq)
@@ -190,10 +190,11 @@ def handle_exceed(tokenizer, seq, maxlen, mode=['noop', 'remove', 'slide', 'star
 
 # new version
 def get_feature_from_data(tokenizer, maxlen, input, previous, target=None, ntarget=None, reserved_len=0,
-                          handle_exceed_='end_slice', **kwargs):  # TODO was noop
+                          handle_exceed_='noop', **kwargs):  # TODO was noop
     feature_dict_list = []
     t_input_list, _ = handle_exceed(tokenizer, input, maxlen - 2 - len(previous) - 1,
                                     handle_exceed_)  # -2 for cls and sep
+    #print(t_input_list[0])
     for t_input in t_input_list:
         row_dict = dict()
         t_input = [tok_begin(tokenizer)] + \

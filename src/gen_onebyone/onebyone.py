@@ -14,7 +14,7 @@ from utility.tok import *
 import numpy as np
 
 import torch
-from transformers import RobertaTokenizer, RobertaForMultipleChoice
+from transformers import AutoTokenizer, AutoModelForMultipleChoice
 from src.eval import load_predict_parameter
 
 label_map = {label: i
@@ -196,30 +196,24 @@ class OneByOne_QA(OneByOne):
         if qa_model_path:
             raise NotImplementedError('Not implemented')
         else:
-            qa_tokenizer = RobertaTokenizer.from_pretrained(
-                "LIAMF-USP/roberta-large-finetuned-race")
-            qa_model = RobertaForMultipleChoice.from_pretrained(
-                "LIAMF-USP/roberta-large-finetuned-race")
+            qa_tokenizer = AutoTokenizer.from_pretrained("russab0/distilbert-qa")
+            qa_model = AutoModelForMultipleChoice.from_pretrained("russab0/distilbert-qa")
             self.qa_model = qa_model
             self.qa_tokenizer = qa_tokenizer
 
         self.qa_model.eval()
         self.qa_model.to(self.device)
 
-        self.predict_parameter = load_predict_parameter(self, False)
+        """self.predict_parameter = load_predict_parameter(self, False)
         self.predict_parameter.pop('input')
         if 'task' not in self.predict_parameter:
-            self.predict_parameter.update({'task': 'default'})
+            self.predict_parameter.update({'task': 'default'})"""
 
     def qa(self, context, question, options, label_example):
         choices_inputs = []
-        for ending_idx, (_, ending) in enumerate(
-                zip(context, options)):
+        for ending_idx, (_, ending) in enumerate(zip(context, options)):
+            question_option = question + " " + ending  # simple question (not fill-the-blank)
 
-            if question.find("_") != -1:  # fill in the blanks questions
-                question_option = question.replace("_", ending)
-            else:
-                question_option = question + " " + ending
             inputs = self.qa_tokenizer(
                 context,
                 question_option,
@@ -237,7 +231,7 @@ class OneByOne_QA(OneByOne):
         ])
         attention_mask = (
             torch.Tensor([[x["attention_mask"] for x in choices_inputs]])
-            # as the senteces follow the same structure, just one of them is necessary to check
+            # as the sentences follow the same structure, just one of them is necessary to check
             if "attention_mask" in choices_inputs[0]
             else None
         )
@@ -254,14 +248,13 @@ class OneByOne_QA(OneByOne):
 
     def get_qa_loss(self, inputs, starts):
         losses = []
-        for i in range(len(inputs)):
+        for i in range(len(inputs)):  # batch
             result, result_dict = self.predict(
                 self.tokenizer.convert_tokens_to_string(
                     self.tokenizer.convert_ids_to_tokens(
                         inputs[i]
                     )
                 ),
-                **self.predict_parameter
             )
             gen_distractor = result[0]
 
@@ -314,7 +307,10 @@ class OneByOne_QA(OneByOne):
             negative_loss = negative_loss_fct(prediction_scores.view(-1, self.pretrained.config.vocab_size),
                                               negativeloss_tensors.view(-1))
 
-            qa_loss = self.get_qa_loss(inputs, starts)
+            if self.tokenizer.sep_token_id in targets:  # ending sample in the
+                qa_loss = self.get_qa_loss(inputs, starts)
+            else:
+                qa_loss = 0
 
             # masked_lm_loss += negative_loss
             outputs = masked_lm_loss + negative_loss + qa_loss
