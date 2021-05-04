@@ -29,6 +29,7 @@ class OneByOne(nn.Module):
         self.pretrained = pretrained
         self.model = nn.Linear(self.pretrained.config.hidden_size, self.tokenizer.__len__())
         self.device = 'cuda' if torch.cuda.is_available() and not kwargs['force_cpu'] else 'cpu'
+        self.qa_weight = kwargs['qa_weight']
         self.maxlen = maxlen
         print('Using device:', self.device)
         self.model.to(self.device)
@@ -308,7 +309,7 @@ class OneByOne_QA(OneByOne):
                                               negativeloss_tensors.view(-1))
 
             if self.tokenizer.sep_token_id in targets:  # ending sample in the
-                qa_loss = self.get_qa_loss(inputs, starts)
+                qa_loss = self.qa_weight * self.get_qa_loss(inputs, starts)
             else:
                 qa_loss = 0
 

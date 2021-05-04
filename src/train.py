@@ -159,7 +159,8 @@ def _load_model_and_data(pretrained_config, tokenizer, pretrained, device, model
             panel = nlp2.Panel()
             inputted_arg = {"pretrained_config": pretrained_config, "maxlen": input_arg.maxlen,
                             "cache": input_arg.cache, "likelihood": model_type,
-                            "force_cpu": input_arg.force_cpu}
+                            "force_cpu": input_arg.force_cpu,
+                            "qa_weight": input_arg.qa_weight}
             all_arg = nlp2.function_get_all_arg_with_value(gen_onebyone.loadOneByOneDataset)
             if input_arg.enable_arg_panel:
                 for missarg in nlp2.function_check_missing_arg(gen_onebyone.loadOneByOneDataset,
@@ -218,6 +219,7 @@ def main():
     parser.add_argument("--architecture", type=str,
                         choices=list(gen_onebyone.MODEL_CONFIG_MAPPING.keys()),
                         default='standard')
+    parser.add_argument("--qa_weight", type=int, help='parameter that controls weighting of QA model')
 
     input_arg = parser.parse_args()
     device = 'cuda' if torch.cuda.is_available() and not input_arg.force_cpu else 'cpu'
