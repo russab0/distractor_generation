@@ -15,7 +15,7 @@ arg = dict()
 def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=None):
     """load model from dumped file"""
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() and not arg.force_cpu else 'cpu'
     torchpack = torch.load(model_path, map_location=device)
 
     print("===model info===")
@@ -56,7 +56,7 @@ def load_model(model_path, pretrained_path=None, model_type=None, model_dataset=
         model = gen_once.Once(tokenizer, pretrained, maxlen=maxlen)
     elif "onebyone" in type_:
         eval_dataset = gen_once.get_data_from_file(model_dataset) if model_dataset else None
-        model = gen_onebyone.OneByOne(tokenizer, pretrained, maxlen=maxlen, force_cpu=arg.force_cpu)
+        model = gen_onebyone.OneByOne(tokenizer, pretrained, maxlen=maxlen, force_cpu=arg.force_cpu, qa_weight=None)
     else:
         raise NotImplementedError('Unknown type of task')
 
