@@ -132,7 +132,11 @@ def mapping(item, tokenizer, maxlen, likelihood, pos_ratio, neg_ratio):
                 data_invalid += 1
             total_data += 1
 
-    return {k: np.array([dic[k] for dic in sample]) for k in sample[0]}  # from list of dicts to dict of lists
+    try:
+        ans = {k: np.array([dic[k] for dic in sample]) for k in sample[0]}  # from list of dicts to dict of lists
+    except Exception as e:
+        ans = {k: [] for k in ['end', 'input', 'mask', 'ntarget', 'start', 'target']}
+    return ans
 
 
 def check_feature_valid(feature, maxlen):
@@ -194,7 +198,6 @@ def get_feature_from_data(tokenizer, maxlen, input, previous, target=None, ntarg
     feature_dict_list = []
     t_input_list, _ = handle_exceed(tokenizer, input, maxlen - 2 - len(previous) - 1,
                                     handle_exceed_)  # -2 for cls and sep
-    #print(t_input_list[0])
     for t_input in t_input_list:
         row_dict = dict()
         t_input = [tok_begin(tokenizer)] + \
