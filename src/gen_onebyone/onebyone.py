@@ -21,6 +21,9 @@ label_map = {label: i
              for i, label in enumerate(["A", "B", "C", "D"])}
 LABELS = ["0", "1", "2", "3"]
 
+qa_model = None
+qa_tokenizer = None
+
 
 class OneByOne(nn.Module):
     def __init__(self, tokenizer, pretrained, maxlen=512, **kwargs):
@@ -191,6 +194,8 @@ class OneByOne_QA(OneByOne):
     """
 
     def __init__(self, tokenizer, pretrained, maxlen=512, **kwargs):
+        global qa_model, qa_tokenizer
+
         qa_model_path = kwargs.pop('qa_model', '')
         super().__init__(tokenizer, pretrained, maxlen, **kwargs)
         print('qa_model_path', qa_model_path, bool(qa_model_path))
@@ -199,23 +204,24 @@ class OneByOne_QA(OneByOne):
         else:
             qa_tokenizer = AutoTokenizer.from_pretrained("russab0/distilbert-qa")
             qa_model = AutoModelForMultipleChoice.from_pretrained("russab0/distilbert-qa")
-            self.qa_model = qa_model
-            self.qa_tokenizer = qa_tokenizer
 
-        self.qa_model.eval()
-        self.qa_model.to(self.device)
+        qa_model.eval()
+        qa_model.to(self.device)
 
-        """self.predict_parameter = load_predict_parameter(self, False)
-        self.predict_parameter.pop('input')
-        if 'task' not in self.predict_parameter:
-            self.predict_parameter.update({'task': 'default'})"""
+    def init_qa(self):
+        global qa_model, qa_tokenizer
+        qa_tokenizer = AutoTokenizer.from_pretrained("russab0/distilbert-qa")
+        qa_model = AutoModelForMultipleChoice.from_pretrained("russab0/distilbert-qa")
+
+        qa_model.eval()
+        qa_model.to(self.device)
 
     def qa(self, context, question, options, label_example):
         choices_inputs = []
         for ending_idx, (_, ending) in enumerate(zip(context, options)):
             question_option = question + " " + ending  # simple question (not fill-the-blank)
 
-            inputs = self.qa_tokenizer(
+            inputs = qa_tokenizer(
                 context,
                 question_option,
                 add_special_tokens=True,
@@ -244,7 +250,7 @@ class OneByOne_QA(OneByOne):
             "labels": label.to(self.device),
         }
 
-        output = self.qa_model(**example_encoded)
+        output = qa_model(**example_encoded)
         return output
 
     def get_qa_loss(self, inputs, starts):
@@ -321,5 +327,6 @@ class OneByOne_QA(OneByOne):
 
 MODEL_CONFIG_MAPPING = {
     'standard': OneByOne,
-    'QA': OneByOne_QA
+    'QA': OneByOne_QA,
+    'GAN': OneByOne
 }

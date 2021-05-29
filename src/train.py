@@ -4,7 +4,7 @@ import random
 import nlp2
 import torch
 from tqdm import tqdm
-from transformers import AdamW, BertTokenizer, AutoTokenizer, AutoModel
+from transformers import AdamW, BertTokenizer, AutoTokenizer, AutoModel, AutoModelForSequenceClassification
 import numpy as np
 import tensorboardX as tensorboard
 from torch.utils import data
@@ -291,6 +291,8 @@ def main():
             for model_tag, state_dict in zip(package['tags'], package['models']):
                 tag_ind = package['tags'].index(model_tag)
                 models[tag_ind].load_state_dict(state_dict)
+                models[tag_ind].qa_weight = input_arg.qa_weight
+                models[tag_ind].init_qa()
         start_epoch = int(package.get('epoch', 1)) + 1
 
     set_seed(input_arg.seed)
